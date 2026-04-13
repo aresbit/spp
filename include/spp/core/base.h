@@ -180,3 +180,5 @@ void keep_alive() noexcept;
 #include <spp/core/box.h>
 
 #include <spp/reflection/format1.h>
+
+#include <spp/reflection/json.h>
