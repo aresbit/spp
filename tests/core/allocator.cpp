@@ -47,6 +47,26 @@ i32 main() {
                 assert(default_box.ok());
                 assert(*default_box == 42);
             }
+            {
+                Rc<i32, Mhidden> hidden_rc{7};
+                Rc<i32, Mdefault> default_rc = hidden_rc.clone<Mdefault>();
+                assert(hidden_rc.ok());
+                assert(default_rc.ok());
+                assert(*hidden_rc == 7);
+                assert(*default_rc == 7);
+                assert(hidden_rc.references() == 1);
+                assert(default_rc.references() == 1);
+            }
+            {
+                Arc<i32, Mhidden> hidden_arc{9};
+                Arc<i32, Mdefault> default_arc = hidden_arc.clone<Mdefault>();
+                assert(hidden_arc.ok());
+                assert(default_arc.ok());
+                assert(*hidden_arc == 9);
+                assert(*default_arc == 9);
+                assert(hidden_arc.references() == 1);
+                assert(default_arc.references() == 1);
+            }
 
             {
                 for(u64 i = 0; i < 100; i++) {

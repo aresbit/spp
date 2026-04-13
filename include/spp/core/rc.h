@@ -76,6 +76,19 @@ struct Rc {
         return ret;
     }
 
+    template<Scalar_Allocator R = P>
+    [[nodiscard]] Rc<T, R> clone() const noexcept
+        requires(Clone<T> || Copy_Constructable<T>)
+    {
+        if(!data_) return Rc<T, R>{};
+        if constexpr(Clone<T>) {
+            return Rc<T, R>{(*data_->value).clone()};
+        } else {
+            static_assert(Copy_Constructable<T>);
+            return Rc<T, R>{*data_->value};
+        }
+    }
+
     Rc(Rc&& src) noexcept {
         data_ = src.data_;
         src.data_ = null;
@@ -177,6 +190,19 @@ struct Arc {
         ret.data_ = data_;
         if(data_) data_->references.incr();
         return ret;
+    }
+
+    template<Scalar_Allocator R = P>
+    [[nodiscard]] Arc<T, R> clone() const noexcept
+        requires(Clone<T> || Copy_Constructable<T>)
+    {
+        if(!data_) return Arc<T, R>{};
+        if constexpr(Clone<T>) {
+            return Arc<T, R>{(*data_->value).clone()};
+        } else {
+            static_assert(Copy_Constructable<T>);
+            return Arc<T, R>{*data_->value};
+        }
     }
 
     Arc(Arc&& src) noexcept {
