@@ -211,4 +211,70 @@ template<Allocator A = Mdefault, typename T>
     return b.build();
 }
 
+template<Allocator A = Mdefault>
+[[nodiscard]] inline String<A> prettify(String_View minified, u64 indent = 2) noexcept {
+    Builder<A> b;
+    bool in_string = false;
+    bool escaped = false;
+    u64 depth = 0;
+
+    auto push_indent = [&](u64 d) {
+        for(u64 i = 0; i < d * indent; i++) b.push(' ');
+    };
+
+    for(u8 c : minified) {
+        if(in_string) {
+            b.push(c);
+            if(escaped) {
+                escaped = false;
+            } else if(c == '\\') {
+                escaped = true;
+            } else if(c == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if(c == '"') {
+            in_string = true;
+            b.push(c);
+            continue;
+        }
+        if(c == '{' || c == '[') {
+            b.push(c);
+            b.push('\n');
+            depth++;
+            push_indent(depth);
+            continue;
+        }
+        if(c == '}' || c == ']') {
+            b.push('\n');
+            if(depth > 0) depth--;
+            push_indent(depth);
+            b.push(c);
+            continue;
+        }
+        if(c == ',') {
+            b.push(c);
+            b.push('\n');
+            push_indent(depth);
+            continue;
+        }
+        if(c == ':') {
+            b.push(':');
+            b.push(' ');
+            continue;
+        }
+        b.push(c);
+    }
+
+    return b.build();
+}
+
+template<Allocator A = Mdefault, typename T>
+[[nodiscard]] inline String<A> stringify_pretty(const T& value, u64 indent = 2) noexcept {
+    auto compact = stringify<A>(value);
+    return prettify<A>(compact.view(), indent);
+}
+
 } // namespace spp::Json

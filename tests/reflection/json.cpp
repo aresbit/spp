@@ -43,6 +43,11 @@ i32 main() {
         auto s = Json::stringify(m);
         assert(s == "{\"x\":1,\"y\":2}"_v || s == "{\"y\":2,\"x\":1}"_v);
     }
+    {
+        User u{7, true, User_Kind::admin};
+        auto pretty = Json::stringify_pretty(u, 2);
+        assert(pretty == "{\n  \"id\": 7,\n  \"active\": true,\n  \"kind\": \"admin\"\n}"_v);
+    }
 
     return 0;
 }
