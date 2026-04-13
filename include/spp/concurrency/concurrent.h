@@ -157,6 +157,30 @@ struct Concurrent_Map {
         return read(spp::forward<F>(f));
     }
 
+    template<typename F>
+    [[nodiscard]] auto batch_read(F&& f) const noexcept -> Invoke_Result<F, const Map<K, V, A>&> {
+        return read(spp::forward<F>(f));
+    }
+
+    template<typename F>
+    [[nodiscard]] auto batch_write(F&& f) noexcept -> Invoke_Result<F, Map<K, V, A>&> {
+        return write(spp::forward<F>(f));
+    }
+
+    [[nodiscard]] Map<K, V, A> snapshot() const noexcept
+        requires((Clone<K> || Copy_Constructable<K>) && (Clone<V> || Copy_Constructable<V>))
+    {
+        Thread::Lock lock{mutex_};
+        return map_.template clone<A>();
+    }
+
+    [[nodiscard]] Map<K, V, A> drain_all() noexcept {
+        Thread::Lock lock{mutex_};
+        Map<K, V, A> out = spp::move(map_);
+        map_ = Map<K, V, A>{};
+        return out;
+    }
+
 private:
     mutable Thread::Mutex mutex_;
     Map<K, V, A> map_;
@@ -232,6 +256,32 @@ struct Concurrent_Vec {
     template<typename F>
     [[nodiscard]] auto with_lock(F&& f) const noexcept -> Invoke_Result<F, const Vec<T, A>&> {
         return read(spp::forward<F>(f));
+    }
+
+    template<typename F>
+    [[nodiscard]] auto batch_read(F&& f) const noexcept -> Invoke_Result<F, const Vec<T, A>&> {
+        return read(spp::forward<F>(f));
+    }
+
+    template<typename F>
+    [[nodiscard]] auto batch_write(F&& f) noexcept -> Invoke_Result<F, Vec<T, A>&> {
+        return write(spp::forward<F>(f));
+    }
+
+    [[nodiscard]] Vec<T, A> snapshot() const noexcept
+        requires Clone<T> || Copy_Constructable<T>
+    {
+        Thread::Lock lock{mutex_};
+        return vec_.template clone<A>();
+    }
+
+    [[nodiscard]] Vec<T, A> drain_all() noexcept
+        requires Move_Constructable<T>
+    {
+        Thread::Lock lock{mutex_};
+        Vec<T, A> out = spp::move(vec_);
+        vec_ = Vec<T, A>{};
+        return out;
     }
 
 private:

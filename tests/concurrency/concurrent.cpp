@@ -50,6 +50,18 @@ i32 main() {
         assert(!cmap.contains(2));
     }
 
+    Trace("Concurrent map snapshot and drain") {
+        Concurrency::Concurrent_Map<i32, i32> cmap;
+        cmap.batch_write([](auto& map) {
+            for(i32 i = 0; i < 32; i++) map.insert(i, i * 2);
+        });
+        auto snap = cmap.snapshot();
+        assert(snap.length() == 32);
+        auto drained = cmap.drain_all();
+        assert(drained.length() == 32);
+        assert(cmap.length() == 0);
+    }
+
     Trace("Concurrent vec push/pop") {
         Concurrency::Concurrent_Vec<i32> cvec;
         constexpr i32 threads = 4;
@@ -80,6 +92,18 @@ i32 main() {
             popped++;
         }
         assert(popped == static_cast<u64>(threads * per_thread));
+        assert(cvec.length() == 0);
+    }
+
+    Trace("Concurrent vec snapshot and drain") {
+        Concurrency::Concurrent_Vec<i32> cvec;
+        cvec.batch_write([](auto& vec) {
+            for(i32 i = 0; i < 64; i++) vec.push(i);
+        });
+        auto snap = cvec.snapshot();
+        assert(snap.length() == 64);
+        auto drained = cvec.drain_all();
+        assert(drained.length() == 64);
         assert(cvec.length() == 0);
     }
 
