@@ -10,7 +10,8 @@
 
 namespace spp::Async {
 
-[[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path_) noexcept {
+[[nodiscard]] Task<Result<Vec<u8, Files::Alloc>, String_View>> read_result(Pool<>& pool,
+                                                                            String_View path_) noexcept {
 
     int fd = -1;
     Region(R) {
@@ -20,7 +21,7 @@ namespace spp::Async {
 
     if(fd == -1) {
         warn("Failed to open file %: %", path_, Log::sys_error());
-        co_return {};
+        co_return Result<Vec<u8, Files::Alloc>, String_View>::err("open_failed"_v);
     }
 
     off_t full_size = lseek(fd, 0, SEEK_END);
@@ -33,14 +34,16 @@ namespace spp::Async {
 
     if(::read(fd, data.data(), full_size) == -1) {
         warn("Failed to read file %: %", path_, Log::sys_error());
-        co_return {};
+        close(fd);
+        co_return Result<Vec<u8, Files::Alloc>, String_View>::err("read_failed"_v);
     }
 
     close(fd);
-    co_return Opt{spp::move(data)};
+    co_return Result<Vec<u8, Files::Alloc>, String_View>::ok(spp::move(data));
 }
 
-[[nodiscard]] Task<bool> write(Pool<>& pool, String_View path_, Slice<u8> data) noexcept {
+[[nodiscard]] Task<Result<u64, String_View>> write_result(Pool<>& pool, String_View path_,
+                                                          Slice<u8> data) noexcept {
 
     int fd = -1;
     Region(R) {
@@ -50,16 +53,28 @@ namespace spp::Async {
 
     if(fd == -1) {
         warn("Failed to create file %: %", path_, Log::sys_error());
-        co_return false;
+        co_return Result<u64, String_View>::err("create_failed"_v);
     }
 
     if(::write(fd, data.data(), data.length()) == -1) {
         warn("Failed to write file %: %", path_, Log::sys_error());
-        co_return false;
+        close(fd);
+        co_return Result<u64, String_View>::err("write_failed"_v);
     }
 
     close(fd);
-    co_return true;
+    co_return Result<u64, String_View>::ok(data.length());
+}
+
+[[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path) noexcept {
+    auto result = co_await read_result(pool, path);
+    if(!result.ok()) co_return Opt<Vec<u8, Files::Alloc>>{};
+    co_return Opt{spp::move(result.unwrap())};
+}
+
+[[nodiscard]] Task<bool> write(Pool<>& pool, String_View path, Slice<u8> data) noexcept {
+    auto result = co_await write_result(pool, path, data);
+    co_return result.ok();
 }
 
 [[nodiscard]] Task<void> wait(Pool<>&, u64 ms) noexcept {
