@@ -2,6 +2,7 @@
 #include "test.h"
 
 #include <spp/core/variant.h>
+#include <spp/functional/match.h>
 
 struct InstCnt {
     InstCnt() {
@@ -38,22 +39,22 @@ i32 main() {
         Variant<i32> v{1};
         info("sizeof variant %", sizeof(v));
 
-        v.match([](i32 i) { info("variant has %", i); });
-        v.match([](i32& i) { info("variant has %", i); });
+        match(v, [](i32 i) { info("variant has %", i); });
+        match(v, [](i32& i) { info("variant has %", i); });
 
         Variant<i32, String_View> v2{"Hello"_v};
 
-        v2.match(Overload{[](i32 i) { info("variant has int %", i); },
-                          [](String_View s) { info("variant has string view %", s); }});
+        match(v2, [](i32 i) { info("variant has int %", i); },
+              [](String_View s) { info("variant has string view %", s); });
 
-        String<> i = v2.match(Overload{[](i32 i) {
-                                           info("variant has int %", i);
-                                           return "int"_v.string();
-                                       },
-                                       [](String_View s) {
-                                           info("variant has string view %", s);
-                                           return "string"_v.string();
-                                       }});
+        String<> i = match(v2, [](i32 i) {
+                               info("variant has int %", i);
+                               return "int"_v.string();
+                           },
+                           [](String_View s) {
+                               info("variant has string view %", s);
+                               return "string"_v.string();
+                           });
 
         info("returned % from match", i);
 
