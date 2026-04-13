@@ -155,6 +155,8 @@ void keep_alive() noexcept;
 
 #include <spp/core/storage.h>
 
+#include <spp/core/result.h>
+
 #include <spp/core/opt.h>
 
 #include <spp/containers/slice.h>
