@@ -183,6 +183,29 @@ namespace spp::Files {
     }
 }
 
+[[nodiscard]] File_Result<u64> mkdir_result(String_View path_) noexcept {
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        if(mkdir(reinterpret_cast<const char*>(path.data()), 0755) == -1) {
+            if(errno == EEXIST) return File_Result<u64>::ok(0);
+            warn("Failed to create directory %: %", path_, Log::sys_error());
+            return File_Result<u64>::err("mkdir_failed"_v);
+        }
+        return File_Result<u64>::ok(0);
+    }
+}
+
+[[nodiscard]] File_Result<u64> rmdir_result(String_View path_) noexcept {
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        if(rmdir(reinterpret_cast<const char*>(path.data())) == -1) {
+            warn("Failed to remove directory %: %", path_, Log::sys_error());
+            return File_Result<u64>::err("rmdir_failed"_v);
+        }
+        return File_Result<u64>::ok(0);
+    }
+}
+
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path_) noexcept {
     Region(R) {
         auto path = path_.terminate<Mregion<R>>();

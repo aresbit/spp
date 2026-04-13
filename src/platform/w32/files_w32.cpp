@@ -276,4 +276,33 @@ namespace spp::Files {
     return File_Result<u64>::ok(0);
 }
 
+[[nodiscard]] File_Result<u64> mkdir_result(String_View path) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", path);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+
+    if(CreateDirectoryW(ucs2_path, null) == FALSE) {
+        DWORD err = GetLastError();
+        if(err == ERROR_ALREADY_EXISTS) return File_Result<u64>::ok(0);
+        warn("Failed to create directory %: %", path, Log::sys_error());
+        return File_Result<u64>::err("mkdir_failed"_v);
+    }
+    return File_Result<u64>::ok(0);
+}
+
+[[nodiscard]] File_Result<u64> rmdir_result(String_View path) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", path);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+    if(RemoveDirectoryW(ucs2_path) == FALSE) {
+        warn("Failed to remove directory %: %", path, Log::sys_error());
+        return File_Result<u64>::err("rmdir_failed"_v);
+    }
+    return File_Result<u64>::ok(0);
+}
+
 } // namespace spp::Files
