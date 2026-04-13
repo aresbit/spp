@@ -49,7 +49,14 @@ struct Udp {
 
     void bind(Address address) noexcept;
     [[nodiscard]] u64 send(Address address, const Packet& out, u64 length) noexcept;
-    [[nodiscard]] Opt<Data> recv(Packet& in) noexcept;
+    [[nodiscard]] Result<Data, String_View> recv_result(Packet& in) noexcept;
+    [[nodiscard]] inline Opt<Data> recv(Packet& in) noexcept {
+        auto result = recv_result(in);
+        if(!result.ok()) {
+            return {};
+        }
+        return Opt<Data>{spp::move(result.unwrap())};
+    }
 
 private:
 #ifdef SPP_OS_WINDOWS

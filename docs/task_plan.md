@@ -27,7 +27,7 @@ Scope baseline: `docs/spp_design.md`
 - [x] Add `Async::*_result` APIs with compatibility wrappers
 - [x] Migrate test harness (`tests/test.h`) to Result-based file path
 - [x] Migrate string/parse path (`reflection/format1`) from `Opt` to `Result`
-- [ ] Migrate network receive/error path to `Result`
+- [x] Migrate network receive/error path to `Result`
 - Status: in progress
 
 ### Phase 3: Functional Layer Alignment
@@ -50,6 +50,7 @@ Scope baseline: `docs/spp_design.md`
 
 ## Completed Commits (Trace)
 - `333b187` migrate file and async io APIs toward Result
+- `pending` migrate udp recv path toward Result (with compatibility wrapper)
 - `pending` migrate format1 parse APIs toward Result (with compatibility wrappers)
 - `f353320` add core Result type for explicit error handling
 - `829345c` fix map slot move lifecycle during rehash
@@ -66,6 +67,6 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Immediate Next Step
-1. Migrate `include/spp/io/net.h` receive API from `Opt<Data>` to `Result<Data, String_View>` with compatibility wrapper.
-2. Update platform network implementations and tests.
+1. Implement `Result` combinators in `include/spp/core/result.h`: `map`, `map_err`, `and_then`, `or_else`.
+2. Add dedicated tests in `tests/core/result.cpp`.
 3. `make test` and commit as one feature.

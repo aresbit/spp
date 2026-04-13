@@ -55,7 +55,7 @@ void Udp::bind(Address address) noexcept {
     }
 }
 
-[[nodiscard]] Opt<Udp::Data> Udp::recv(Packet& in) noexcept {
+[[nodiscard]] Result<Udp::Data, String_View> Udp::recv_result(Packet& in) noexcept {
 
     Address src;
     socklen_t src_len = sizeof(src.sockaddr_);
@@ -64,10 +64,16 @@ void Udp::bind(Address address) noexcept {
                          reinterpret_cast<sockaddr*>(&src.sockaddr_), &src_len);
 
     if(ret == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-        return Opt<Data>{};
+        return Result<Data, String_View>::err("would_block"_v);
+    }
+    if(ret < 0) {
+        return Result<Data, String_View>::err(Log::sys_error());
+    }
+    if(static_cast<u64>(ret) > in.length()) {
+        return Result<Data, String_View>::err("packet_truncated"_v);
     }
 
-    return Opt{Data{static_cast<u64>(ret), spp::move(src)}};
+    return Result<Data, String_View>::ok(Data{static_cast<u64>(ret), spp::move(src)});
 }
 
 [[nodiscard]] u64 Udp::send(Address address, const Packet& out, u64 length) noexcept {

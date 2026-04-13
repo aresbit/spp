@@ -19,10 +19,13 @@ i32 main() {
 
         Thread::sleep(100);
 
-        auto data = udp.recv(packet);
+        auto data = udp.recv_result(packet);
         assert(data.ok());
-        assert(data->length == 5);
-        info("%", String_View{packet.data(), data->length});
+        assert(data.unwrap().length == 5);
+        info("%", String_View{packet.data(), data.unwrap().length});
+
+        auto data_compat = udp.recv(packet);
+        assert(!data_compat.ok());
     }
     return 0;
 }

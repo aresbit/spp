@@ -115,7 +115,7 @@ void Udp::bind(Address address) noexcept {
     }
 }
 
-[[nodiscard]] Opt<Udp::Data> Udp::recv(Packet& in) noexcept {
+[[nodiscard]] Result<Udp::Data, String_View> Udp::recv_result(Packet& in) noexcept {
 
     sockaddr_in src;
 
@@ -123,13 +123,20 @@ void Udp::bind(Address address) noexcept {
     i32 ret = recvfrom(socket, reinterpret_cast<char*>(in.data()), static_cast<i32>(in.length()), 0,
                        reinterpret_cast<SOCKADDR*>(&src), &src_len);
     if(ret == SOCKET_ERROR) {
-        return {};
+        int err = WSAGetLastError();
+        if(err == WSAEWOULDBLOCK) {
+            return Result<Data, String_View>::err("would_block"_v);
+        }
+        return Result<Data, String_View>::err(wsa_error_code(err));
+    }
+    if(ret < 0) {
+        return Result<Data, String_View>::err("recv_failed"_v);
     }
 
     Address retaddr;
     *reinterpret_cast<sockaddr_in*>(retaddr.sockaddr_storage) = src;
 
-    return Opt{Data{static_cast<u64>(ret), spp::move(retaddr)}};
+    return Result<Data, String_View>::ok(Data{static_cast<u64>(ret), spp::move(retaddr)});
 }
 
 [[nodiscard]] u64 Udp::send(Address address, const Packet& out, u64 length) noexcept {
