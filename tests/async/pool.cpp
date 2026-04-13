@@ -156,6 +156,20 @@ i32 main() {
             assert(stats.enqueued > 0);
             assert(stats.stolen <= stats.enqueued);
         }
+        {
+            Vec<Async::Event> events;
+            events.push(Async::Event{});
+            events.push(Async::Event{});
+
+            auto timeout = Async::Event::wait_any_for(events.slice(), 1);
+            assert(!timeout.ok());
+
+            events[1].signal();
+            auto signaled = Async::Event::wait_any_for(events.slice(), 100);
+            assert(signaled.ok());
+            assert(*signaled == 1);
+            events[1].reset();
+        }
     }
     return 0;
 }

@@ -91,13 +91,17 @@ void Event::reset() const noexcept {
         die("Failed to create kqueue: %", Log::sys_error());
     }
 
-    struct kevent wait;
     for(auto& e : events) {
-        EV_SET(&wait, e.fd, e.mask, EV_ADD | EV_ENABLE, 0, 0, null);
+        struct kevent change;
+        EV_SET(&change, e.fd, e.mask, EV_ADD | EV_ENABLE, 0, 0, null);
+        int add_count = kevent(kq, &change, 1, null, 0, null);
+        if(add_count < 0) {
+            die("Failed to add kevent: %", Log::sys_error());
+        }
     }
 
     struct kevent signaled;
-    int count = kevent(kq, &wait, 1, &signaled, 1, null);
+    int count = kevent(kq, null, 0, &signaled, 1, null);
     if((count < 0) || (signaled.flags == EV_ERROR)) {
         die("Failed to wait on kevents: %", Log::sys_error());
     }
@@ -110,6 +114,46 @@ void Event::reset() const noexcept {
     for(u64 i = 0; i < events.length(); ++i) {
         if(events[i].fd == static_cast<i32>(signaled.ident)) {
             return i;
+        }
+    }
+    SPP_UNREACHABLE;
+}
+
+[[nodiscard]] Opt<u64> Event::wait_any_for(Slice<Event> events, u64 timeout_ms) noexcept {
+
+    int kq = kqueue();
+    if(kq == -1) {
+        die("Failed to create kqueue: %", Log::sys_error());
+    }
+
+    for(auto& e : events) {
+        struct kevent change;
+        EV_SET(&change, e.fd, e.mask, EV_ADD | EV_ENABLE, 0, 0, null);
+        int add_count = kevent(kq, &change, 1, null, 0, null);
+        if(add_count < 0) {
+            die("Failed to add kevent: %", Log::sys_error());
+        }
+    }
+
+    timespec timeout = {};
+    timeout.tv_sec = static_cast<time_t>(timeout_ms / 1000);
+    timeout.tv_nsec = static_cast<long>((timeout_ms % 1000) * 1000000);
+
+    struct kevent signaled;
+    int count = kevent(kq, null, 0, &signaled, 1, &timeout);
+    if(count < 0) {
+        die("Failed to wait on kevents: %", Log::sys_error());
+    }
+    close(kq);
+
+    if(count == 0) return Opt<u64>{};
+    if(signaled.flags == EV_ERROR) {
+        die("Failed kevent wait with error: %", Log::sys_error());
+    }
+
+    for(u64 i = 0; i < events.length(); ++i) {
+        if(events[i].fd == static_cast<i32>(signaled.ident)) {
+            return Opt<u64>{i};
         }
     }
     SPP_UNREACHABLE;

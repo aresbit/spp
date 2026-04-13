@@ -80,4 +80,18 @@ void Event::signal() const noexcept {
     return ret - WAIT_OBJECT_0;
 }
 
+[[nodiscard]] Opt<u64> Event::wait_any_for(Slice<Event> events, u64 timeout_ms) noexcept {
+    assert(!events.empty());
+    const HANDLE* handles = reinterpret_cast<const HANDLE*>(events.data());
+    DWORD ret = WaitForMultipleObjectsEx(static_cast<DWORD>(events.length()), handles, false,
+                                         static_cast<DWORD>(timeout_ms), false);
+    if(ret == WAIT_TIMEOUT) {
+        return Opt<u64>{};
+    }
+    if(ret < WAIT_OBJECT_0 || ret >= WAIT_OBJECT_0 + events.length()) {
+        die("Failed to wait on events: % (%)", static_cast<u32>(ret), Log::sys_error());
+    }
+    return Opt<u64>{static_cast<u64>(ret - WAIT_OBJECT_0)};
+}
+
 } // namespace spp::Async

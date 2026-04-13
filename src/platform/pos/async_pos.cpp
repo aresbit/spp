@@ -121,4 +121,40 @@ void Event::reset() const noexcept {
     SPP_UNREACHABLE;
 }
 
+[[nodiscard]] Opt<u64> Event::wait_any_for(Slice<Event> events, u64 timeout_ms) noexcept {
+
+    int epfd = epoll_create1(EPOLL_CLOEXEC);
+    if(epfd == -1) {
+        die("Failed to create epoll: %", Log::sys_error());
+    }
+
+    for(auto& event : events) {
+        epoll_event ev;
+        ev.events = event.mask;
+        ev.data.fd = event.fd;
+        int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, event.fd, &ev);
+        if(ret == -1) {
+            die("Failed to add event to epoll: %", Log::sys_error());
+        }
+    }
+
+    epoll_event ev;
+    int wait_ret = epoll_wait(epfd, &ev, 1, static_cast<int>(timeout_ms));
+    if(wait_ret == -1) {
+        die("Failed to wait on events: %", Log::sys_error());
+    }
+
+    int close_ret = close(epfd);
+    assert(close_ret == 0);
+
+    if(wait_ret == 0) return Opt<u64>{};
+
+    for(u64 i = 0; i < events.length(); ++i) {
+        if(events[i].fd == ev.data.fd) {
+            return Opt<u64>{i};
+        }
+    }
+    SPP_UNREACHABLE;
+}
+
 } // namespace spp::Async

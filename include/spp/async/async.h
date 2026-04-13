@@ -252,6 +252,7 @@ struct Event {
     Event& operator=(Event&& src) noexcept;
 
     [[nodiscard]] static u64 wait_any(Slice<Event> events) noexcept;
+    [[nodiscard]] static Opt<u64> wait_any_for(Slice<Event> events, u64 timeout_ms) noexcept;
 
     void signal() const noexcept;
     void reset() const noexcept;
