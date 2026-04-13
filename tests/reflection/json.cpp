@@ -48,6 +48,20 @@ i32 main() {
         auto pretty = Json::stringify_pretty(u, 2);
         assert(pretty == "{\n  \"id\": 7,\n  \"active\": true,\n  \"kind\": \"admin\"\n}"_v);
     }
+    {
+        auto b = Json::parse_result<bool>(" true "_v);
+        assert(b.ok() && b.unwrap() == true);
+        auto i = Json::parse_result<i64>("42"_v);
+        assert(i.ok() && i.unwrap() == 42);
+        auto s = Json::parse_result<String<Mdefault>>("\"hello\""_v);
+        assert(s.ok() && s.unwrap() == "hello"_v);
+    }
+    {
+        auto v = Json::parse_vec_result<i32>("[1, 2, 3]"_v);
+        assert(v.ok());
+        assert(v.unwrap().length() == 3);
+        assert(v.unwrap()[0] == 1 && v.unwrap()[1] == 2 && v.unwrap()[2] == 3);
+    }
 
     return 0;
 }

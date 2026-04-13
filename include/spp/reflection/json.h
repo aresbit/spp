@@ -277,4 +277,161 @@ template<Allocator A = Mdefault, typename T>
     return prettify<A>(compact.view(), indent);
 }
 
+namespace detail {
+
+struct Cursor {
+    String_View s;
+    u64 i = 0;
+};
+
+inline void skip_ws(Cursor& c) noexcept {
+    while(c.i < c.s.length() && ascii::is_whitespace(c.s[c.i])) c.i++;
+}
+
+[[nodiscard]] inline Result<String<Mdefault>, String_View> parse_string(Cursor& c) noexcept {
+    skip_ws(c);
+    if(c.i >= c.s.length() || c.s[c.i] != '"') {
+        return Result<String<Mdefault>, String_View>::err("json_expected_string"_v);
+    }
+    c.i++;
+
+    Vec<u8> out;
+    while(c.i < c.s.length()) {
+        u8 ch = c.s[c.i++];
+        if(ch == '"') {
+            auto ret = String<Mdefault>{out.length()};
+            ret.set_length(out.length());
+            if(out.length()) Libc::memcpy(ret.data(), out.data(), out.length());
+            return Result<String<Mdefault>, String_View>::ok(spp::move(ret));
+        }
+        if(ch == '\\') {
+            if(c.i >= c.s.length()) {
+                return Result<String<Mdefault>, String_View>::err("json_bad_escape"_v);
+            }
+            u8 esc = c.s[c.i++];
+            if(esc == '"' || esc == '\\' || esc == '/') out.push(esc);
+            else if(esc == 'n') out.push('\n');
+            else if(esc == 'r') out.push('\r');
+            else if(esc == 't') out.push('\t');
+            else return Result<String<Mdefault>, String_View>::err("json_bad_escape"_v);
+        } else {
+            out.push(ch);
+        }
+    }
+    return Result<String<Mdefault>, String_View>::err("json_unterminated_string"_v);
+}
+
+template<typename T>
+[[nodiscard]] inline Result<T, String_View> parse_value(Cursor& c) noexcept;
+
+template<typename T, Allocator A>
+[[nodiscard]] inline Result<Vec<T, A>, String_View> parse_array(Cursor& c) noexcept {
+    skip_ws(c);
+    if(c.i >= c.s.length() || c.s[c.i] != '[') {
+        return Result<Vec<T, A>, String_View>::err("json_expected_array"_v);
+    }
+    c.i++;
+    Vec<T, A> values;
+    skip_ws(c);
+    if(c.i < c.s.length() && c.s[c.i] == ']') {
+        c.i++;
+        return Result<Vec<T, A>, String_View>::ok(spp::move(values));
+    }
+
+    for(;;) {
+        auto item = parse_value<T>(c);
+        if(!item.ok()) return Result<Vec<T, A>, String_View>::err(spp::move(item.unwrap_err()));
+        values.push(spp::move(item.unwrap()));
+        skip_ws(c);
+        if(c.i >= c.s.length()) {
+            return Result<Vec<T, A>, String_View>::err("json_unterminated_array"_v);
+        }
+        if(c.s[c.i] == ']') {
+            c.i++;
+            return Result<Vec<T, A>, String_View>::ok(spp::move(values));
+        }
+        if(c.s[c.i] != ',') {
+            return Result<Vec<T, A>, String_View>::err("json_expected_comma"_v);
+        }
+        c.i++;
+    }
+}
+
+template<typename T>
+[[nodiscard]] inline Result<T, String_View> parse_value(Cursor& c) noexcept {
+    skip_ws(c);
+
+    if constexpr(Same<T, bool>) {
+        if(c.i + 4 <= c.s.length() && c.s.sub(c.i, c.i + 4) == "true"_v) {
+            c.i += 4;
+            return Result<T, String_View>::ok(true);
+        }
+        if(c.i + 5 <= c.s.length() && c.s.sub(c.i, c.i + 5) == "false"_v) {
+            c.i += 5;
+            return Result<T, String_View>::ok(false);
+        }
+        return Result<T, String_View>::err("json_expected_bool"_v);
+    } else if constexpr(Same<T, i64>) {
+        auto parsed = Format::parse_i64_result(c.s.sub(c.i, c.s.length()));
+        if(!parsed.ok()) return Result<T, String_View>::err("json_expected_i64"_v);
+        auto [value, rest] = parsed.unwrap();
+        c.i = c.s.length() - rest.length();
+        return Result<T, String_View>::ok(spp::move(value));
+    } else if constexpr(Same<T, i32>) {
+        auto parsed = parse_value<i64>(c);
+        if(!parsed.ok()) return Result<T, String_View>::err(spp::move(parsed.unwrap_err()));
+        i64 v = parsed.unwrap();
+        return Result<T, String_View>::ok(static_cast<i32>(v));
+    } else if constexpr(Same<T, f64>) {
+        auto parsed = Format::parse_f32_result(c.s.sub(c.i, c.s.length()));
+        if(!parsed.ok()) return Result<T, String_View>::err("json_expected_f64"_v);
+        auto [value, rest] = parsed.unwrap();
+        c.i = c.s.length() - rest.length();
+        return Result<T, String_View>::ok(static_cast<f64>(value));
+    } else if constexpr(Same<T, f32>) {
+        auto parsed = Format::parse_f32_result(c.s.sub(c.i, c.s.length()));
+        if(!parsed.ok()) return Result<T, String_View>::err("json_expected_f32"_v);
+        auto [value, rest] = parsed.unwrap();
+        c.i = c.s.length() - rest.length();
+        return Result<T, String_View>::ok(spp::move(value));
+    } else if constexpr(Any_String<T>) {
+        auto parsed = parse_string(c);
+        if(!parsed.ok()) return Result<T, String_View>::err(spp::move(parsed.unwrap_err()));
+        if constexpr(Same<T, String<Mdefault>>) {
+            return Result<T, String_View>::ok(spp::move(parsed.unwrap()));
+        } else {
+            T value = spp::move(parsed.unwrap());
+            return Result<T, String_View>::ok(spp::move(value));
+        }
+    } else {
+        return Result<T, String_View>::err("json_parse_unsupported_type"_v);
+    }
+}
+
+} // namespace detail
+
+template<typename T>
+[[nodiscard]] inline Result<T, String_View> parse_result(String_View input) noexcept {
+    detail::Cursor c{input, 0};
+    auto parsed = detail::parse_value<T>(c);
+    if(!parsed.ok()) return Result<T, String_View>::err(spp::move(parsed.unwrap_err()));
+    detail::skip_ws(c);
+    if(c.i != input.length()) {
+        return Result<T, String_View>::err("json_trailing_chars"_v);
+    }
+    return spp::move(parsed);
+}
+
+template<typename T, Allocator A = Mdefault>
+[[nodiscard]] inline Result<Vec<T, A>, String_View> parse_vec_result(String_View input) noexcept {
+    detail::Cursor c{input, 0};
+    auto parsed = detail::parse_array<T, A>(c);
+    if(!parsed.ok()) return Result<Vec<T, A>, String_View>::err(spp::move(parsed.unwrap_err()));
+    detail::skip_ws(c);
+    if(c.i != input.length()) {
+        return Result<Vec<T, A>, String_View>::err("json_trailing_chars"_v);
+    }
+    return spp::move(parsed);
+}
+
 } // namespace spp::Json
