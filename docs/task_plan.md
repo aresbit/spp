@@ -31,8 +31,8 @@ Scope baseline: `docs/spp_design.md`
 - Status: in progress
 
 ### Phase 3: Functional Layer Alignment
-- [ ] Result combinators (`map`, `map_err`, `and_then`, `or_else`)
-- [ ] Pattern matching alignment and API cleanup
+- [x] Result combinators (`map`, `map_err`, `and_then`, `or_else`)
+- [x] Pattern matching alignment and API cleanup
 - [ ] Immutable collection behavior audit vs design doc
 - Status: pending
 
@@ -51,6 +51,7 @@ Scope baseline: `docs/spp_design.md`
 ## Completed Commits (Trace)
 - `333b187` migrate file and async io APIs toward Result
 - `pending` migrate udp recv path toward Result (with compatibility wrapper)
+- `pending` add Result combinators (`map/map_err/and_then/or_else`)
 - `pending` migrate format1 parse APIs toward Result (with compatibility wrappers)
 - `f353320` add core Result type for explicit error handling
 - `829345c` fix map slot move lifecycle during rehash
@@ -67,6 +68,6 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Immediate Next Step
-1. Implement `Result` combinators in `include/spp/core/result.h`: `map`, `map_err`, `and_then`, `or_else`.
-2. Add dedicated tests in `tests/core/result.cpp`.
+1. Add free `match(...)` API in `functional/match.h` and migrate representative `Variant` test call sites.
+2. Keep old member `.match(...)` path unchanged for compatibility.
 3. `make test` and commit as one feature.

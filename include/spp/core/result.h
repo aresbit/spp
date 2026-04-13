@@ -28,6 +28,8 @@ Err(E) -> Err<E>;
 
 template<typename T, typename E>
 struct Result {
+    using Ok_Type = T;
+    using Err_Type = E;
 
     Result() noexcept
         requires Default_Constructable<E>
@@ -157,6 +159,93 @@ struct Result {
 
     [[nodiscard]] bool ok() const noexcept {
         return ok_;
+    }
+
+    template<typename F>
+        requires Invocable<F, T&&> && Move_Constructable<E>
+    [[nodiscard]] auto map(F&& f) && noexcept -> Result<Decay<Invoke_Result<F, T&&>>, E> {
+        using U = Decay<Invoke_Result<F, T&&>>;
+        if(ok_) {
+            return Result<U, E>::ok(spp::forward<F>(f)(spp::move(*value_)));
+        }
+        return Result<U, E>::err(spp::move(*error_));
+    }
+
+    template<typename F>
+        requires Invocable<F, const T&> && Copy_Constructable<E>
+    [[nodiscard]] auto map(F&& f) const& noexcept -> Result<Decay<Invoke_Result<F, const T&>>, E> {
+        using U = Decay<Invoke_Result<F, const T&>>;
+        if(ok_) {
+            return Result<U, E>::ok(spp::forward<F>(f)(*value_));
+        }
+        return Result<U, E>::err(E{*error_});
+    }
+
+    template<typename F>
+        requires Invocable<F, E&&> && Move_Constructable<T>
+    [[nodiscard]] auto map_err(F&& f) && noexcept -> Result<T, Decay<Invoke_Result<F, E&&>>> {
+        using E2 = Decay<Invoke_Result<F, E&&>>;
+        if(ok_) {
+            return Result<T, E2>::ok(spp::move(*value_));
+        }
+        return Result<T, E2>::err(spp::forward<F>(f)(spp::move(*error_)));
+    }
+
+    template<typename F>
+        requires Invocable<F, const E&> && Copy_Constructable<T>
+    [[nodiscard]] auto map_err(F&& f) const& noexcept
+        -> Result<T, Decay<Invoke_Result<F, const E&>>> {
+        using E2 = Decay<Invoke_Result<F, const E&>>;
+        if(ok_) {
+            return Result<T, E2>::ok(T{*value_});
+        }
+        return Result<T, E2>::err(spp::forward<F>(f)(*error_));
+    }
+
+    template<typename F>
+        requires Invocable<F, T&&> && Same<typename Decay<Invoke_Result<F, T&&>>::Err_Type, E> &&
+                 Move_Constructable<E>
+    [[nodiscard]] auto and_then(F&& f) && noexcept -> Decay<Invoke_Result<F, T&&>> {
+        using R = Decay<Invoke_Result<F, T&&>>;
+        if(ok_) {
+            return spp::forward<F>(f)(spp::move(*value_));
+        }
+        return R::err(spp::move(*error_));
+    }
+
+    template<typename F>
+        requires Invocable<F, const T&> &&
+                 Same<typename Decay<Invoke_Result<F, const T&>>::Err_Type, E> &&
+                 Copy_Constructable<E>
+    [[nodiscard]] auto and_then(F&& f) const& noexcept -> Decay<Invoke_Result<F, const T&>> {
+        using R = Decay<Invoke_Result<F, const T&>>;
+        if(ok_) {
+            return spp::forward<F>(f)(*value_);
+        }
+        return R::err(E{*error_});
+    }
+
+    template<typename F>
+        requires Invocable<F, E&&> && Same<typename Decay<Invoke_Result<F, E&&>>::Ok_Type, T> &&
+                 Move_Constructable<T>
+    [[nodiscard]] auto or_else(F&& f) && noexcept -> Decay<Invoke_Result<F, E&&>> {
+        using R = Decay<Invoke_Result<F, E&&>>;
+        if(ok_) {
+            return R::ok(spp::move(*value_));
+        }
+        return spp::forward<F>(f)(spp::move(*error_));
+    }
+
+    template<typename F>
+        requires Invocable<F, const E&> &&
+                 Same<typename Decay<Invoke_Result<F, const E&>>::Ok_Type, T> &&
+                 Copy_Constructable<T>
+    [[nodiscard]] auto or_else(F&& f) const& noexcept -> Decay<Invoke_Result<F, const E&>> {
+        using R = Decay<Invoke_Result<F, const E&>>;
+        if(ok_) {
+            return R::ok(T{*value_});
+        }
+        return spp::forward<F>(f)(*error_);
     }
 
     [[nodiscard]] T& unwrap() noexcept {
