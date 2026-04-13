@@ -37,10 +37,10 @@ Scope baseline: `docs/spp_design.md`
 - Status: completed (for current baseline)
 
 ### Phase 4: Concurrency & Async Alignment
-- [ ] Channel abstractions
+- [x] Channel abstractions
 - [ ] Async runtime capability gap audit vs design doc
 - [ ] Concurrent container safety pass
-- Status: pending
+- Status: in progress
 
 ### Phase 5: Ecosystem & Optimization
 - [ ] Serialization / reflection integration checkpoints
@@ -50,6 +50,7 @@ Scope baseline: `docs/spp_design.md`
 
 ## Completed Commits (Trace)
 - `333b187` migrate file and async io APIs toward Result
+- `pending` add MPMC channel baseline (`Sender`/`Receiver`)
 - `pending` migrate udp recv path toward Result (with compatibility wrapper)
 - `pending` add free `match(...)` API for Variant
 - `pending` add const/non-mutating lookup path for string-keyed Map
@@ -70,6 +71,6 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Immediate Next Step
-1. Start Phase 4 concurrency alignment with channel abstractions (`Sender`/`Receiver` baseline API).
-2. Add minimal channel tests and wire into `make test`.
-3. Keep compatibility-first strategy and one feature per commit.
+1. Start async runtime capability gap audit against design doc.
+2. Prioritize compatibility-safe additions on top of current coroutine pool/runtime.
+3. Keep one feature per commit.
