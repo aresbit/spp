@@ -31,7 +31,18 @@ i32 main() {
         auto s = Json::stringify(a);
         assert(s == "[1,2,3]"_v);
     }
+    {
+        Vec<i32> v{1, 2, 3};
+        auto s = Json::stringify(v);
+        assert(s == "[1,2,3]"_v);
+    }
+    {
+        Map<String_View, i32> m;
+        m.insert("x"_v, 1);
+        m.insert("y"_v, 2);
+        auto s = Json::stringify(m);
+        assert(s == "{\"x\":1,\"y\":2}"_v || s == "{\"y\":2,\"x\":1}"_v);
+    }
 
     return 0;
 }
-

@@ -84,6 +84,67 @@ inline void write_json(Builder<A>& b, const char* s) noexcept {
     write_json(b, String_View{s});
 }
 
+template<Allocator A, typename T, Allocator V>
+inline void write_json(Builder<A>& b, const Vec<T, V>& values) noexcept {
+    b.push('[');
+    for(u64 i = 0; i < values.length(); i++) {
+        if(i != 0) b.push(',');
+        write_json(b, values[i]);
+    }
+    b.push(']');
+}
+
+template<Allocator A, typename T>
+inline void write_json(Builder<A>& b, const Slice<T>& values) noexcept {
+    b.push('[');
+    for(u64 i = 0; i < values.length(); i++) {
+        if(i != 0) b.push(',');
+        write_json(b, values[i]);
+    }
+    b.push(']');
+}
+
+template<Allocator A, typename T, u64 N>
+inline void write_json(Builder<A>& b, const Array<T, N>& values) noexcept {
+    write_json(b, values.slice());
+}
+
+template<typename K>
+constexpr bool json_object_key = Same<K, String_View> || Any_String<K>;
+
+template<Allocator A, Key K, Move_Constructable V, Allocator M>
+inline void write_json(Builder<A>& b, const Map<K, V, M>& m) noexcept {
+    if constexpr(json_object_key<K>) {
+        b.push('{');
+        bool first = true;
+        for(const auto& kv : m) {
+            if(!first) b.push(',');
+            first = false;
+            if constexpr(Same<K, String_View>) {
+                write_json(b, kv.first);
+            } else {
+                write_json(b, kv.first.view());
+            }
+            b.push(':');
+            write_json(b, kv.second);
+        }
+        b.push('}');
+    } else {
+        b.push('[');
+        bool first = true;
+        for(const auto& kv : m) {
+            if(!first) b.push(',');
+            first = false;
+            b.append("{\"key\":");
+            write_json(b, kv.first);
+            b.append(",\"value\":");
+            write_json(b, kv.second);
+            b.push('}');
+        }
+        b.push(']');
+    }
+}
+
 template<Allocator A, Reflect::Enum E>
 inline void write_json_enum(Builder<A>& b, const E& value) noexcept {
     String_View name = "Invalid"_v;
