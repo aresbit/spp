@@ -143,19 +143,45 @@ private:
         Thread_State& state = thread_states[thread_idx];
         for(;;) {
             Handle<> job;
+            bool has_job = false;
             {
                 Thread::Lock lock(state.mut);
 
                 while(state.jobs.empty() && !shutdown.load()) {
+                    if(try_steal(thread_idx, job)) {
+                        has_job = true;
+                        break;
+                    }
                     state.cond.wait(state.mut);
                 }
-                if(shutdown.load()) return;
-
-                job = spp::move(state.jobs.front());
-                state.jobs.pop();
+                if(!has_job) {
+                    if(shutdown.load()) return;
+                    job = spp::move(state.jobs.front());
+                    state.jobs.pop();
+                }
             }
             job.handle.resume();
         }
+    }
+
+    [[nodiscard]] bool try_steal(u64 thread_idx, Handle<>& out) noexcept {
+        u64 n = thread_states.length();
+        for(u64 offset = 1; offset < n; offset++) {
+            u64 victim_idx = (thread_idx + offset) % n;
+            Thread_State& victim = thread_states[victim_idx];
+            if(!victim.mut.try_lock()) continue;
+
+            bool stolen = false;
+            if(!victim.jobs.empty()) {
+                out = spp::move(victim.jobs.front());
+                victim.jobs.pop();
+                stolen = true;
+            }
+            victim.mut.unlock();
+
+            if(stolen) return true;
+        }
+        return false;
     }
 
     void do_events() noexcept {
