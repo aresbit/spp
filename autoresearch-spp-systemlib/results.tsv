@@ -1,0 +1,7 @@
+experiment	score	max_score	pass_rate	status	description
+0	8	8	100.0%	baseline	baseline: async runtime after gap-audit
+1	8	8	100.0%	keep	feat: Result-based async wait API across backends
+2	8	8	100.0%	keep	feat: async channel timeout recv_for/send_for
+3	8	8	100.0%	keep	feat: pool runtime stats API
+4	8	8	100.0%	keep	feat: timed Event::wait_any_for API
+5	8	8	100.0%	keep	feat: cancellable wait with Cancel_Token

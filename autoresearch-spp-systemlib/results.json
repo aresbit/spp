@@ -1,0 +1,25 @@
+{
+  "skill_name": "autoresearch-spp-systemlib",
+  "status": "complete",
+  "current_experiment": 5,
+  "baseline_score": 100.0,
+  "best_score": 100.0,
+  "experiments": [
+    {"id": 0, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "baseline", "description": "baseline: async runtime after gap-audit"},
+    {"id": 1, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: Result-based async wait API across backends"},
+    {"id": 2, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: async channel timeout recv_for/send_for"},
+    {"id": 3, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: pool runtime stats API"},
+    {"id": 4, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: timed Event::wait_any_for API"},
+    {"id": 5, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: cancellable wait with Cancel_Token"}
+  ],
+  "eval_breakdown": [
+    {"name": "feature_commit_made", "pass_count": 5, "total": 5},
+    {"name": "build_pass", "pass_count": 5, "total": 5},
+    {"name": "make_test_pass", "pass_count": 5, "total": 5},
+    {"name": "task_plan_aligned", "pass_count": 5, "total": 5},
+    {"name": "async_phase4_scope", "pass_count": 5, "total": 5},
+    {"name": "no_api_break_regression", "pass_count": 5, "total": 5},
+    {"name": "cross_platform_source_coverage", "pass_count": 5, "total": 5},
+    {"name": "test_coverage_added", "pass_count": 5, "total": 5}
+  ]
+}

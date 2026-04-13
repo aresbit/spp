@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/><title>Autoresearch SPP Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f8fafc;color:#0f172a;margin:24px}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px}
+table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left}
+.status-baseline{color:#2563eb}.status-keep{color:#059669}.status-discard{color:#dc2626}
+</style></head>
+<body>
+<div class="card"><h2>SPP Autoresearch</h2><div id="meta"></div></div>
+<div class="card"><canvas id="chart" height="100"></canvas></div>
+<div class="card"><h3>Experiments</h3><table><thead><tr><th>ID</th><th>Score</th><th>Pass%</th><th>Status</th><th>Description</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="card"><h3>Eval Breakdown</h3><ul id="evals"></ul></div>
+<script>
+let chart;
+async function refresh(){
+  const r=await fetch('results.json?ts='+Date.now());
+  const d=await r.json();
+  document.getElementById('meta').textContent=`Status: ${d.status} | Current: ${d.current_experiment} | Best: ${d.best_score}%`;
+  const rows=d.experiments.map(e=>`<tr><td>${e.id}</td><td>${e.score}/${e.max_score}</td><td>${e.pass_rate.toFixed(1)}%</td><td class="status-${e.status}">${e.status}</td><td>${e.description}</td></tr>`).join('');
+  document.getElementById('rows').innerHTML=rows;
+  document.getElementById('evals').innerHTML=d.eval_breakdown.map(x=>`<li>${x.name}: ${x.pass_count}/${x.total}</li>`).join('');
+  const labels=d.experiments.map(e=>e.id), data=d.experiments.map(e=>e.pass_rate);
+  if(!chart){ chart=new Chart(document.getElementById('chart'),{type:'line',data:{labels,datasets:[{label:'Pass Rate %',data,borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.15)'}]}}); }
+  else { chart.data.labels=labels; chart.data.datasets[0].data=data; chart.update(); }
+}
+refresh(); setInterval(refresh,10000);
+</script></body></html>
