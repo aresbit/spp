@@ -1,0 +1,158 @@
+
+#pragma once
+
+#ifndef SPP_BASE
+#error "Include base.h instead."
+#endif
+
+namespace spp {
+
+template<typename T>
+struct Opt;
+
+template<typename T>
+Opt(T) -> Opt<T>;
+
+template<typename T>
+struct Opt {
+
+    Opt() noexcept = default;
+
+    explicit Opt(T&& value) noexcept
+        requires Move_Constructable<T>
+        : ok_(true), value_(spp::move(value)) {
+    }
+
+    template<typename... Args>
+    explicit Opt(Args&&... args) noexcept
+        requires Constructable<T, Args...>
+        : ok_(true), value_(spp::forward<Args>(args)...) {
+    }
+
+    ~Opt() noexcept {
+        clear();
+    }
+
+    Opt(const Opt& src) noexcept
+        requires Copy_Constructable<T>
+    = default;
+    Opt& operator=(const Opt& src) noexcept
+        requires Copy_Constructable<T>
+    = default;
+
+    Opt(Opt&& src) noexcept
+        requires Move_Constructable<T>
+    {
+        if(src.ok_) {
+            value_.construct(spp::move(*src.value_));
+            ok_ = true;
+        }
+    }
+
+    Opt& operator=(Opt&& src) noexcept
+        requires Move_Constructable<T>
+    {
+        clear();
+        if(src.ok_) {
+            value_.construct(spp::move(*src.value_));
+            ok_ = true;
+        }
+        return *this;
+    }
+
+    Opt& operator=(T&& value) noexcept
+        requires Move_Constructable<T>
+    {
+        clear();
+        value_.construct(spp::move(value));
+        ok_ = true;
+        return *this;
+    }
+
+    template<typename... Args>
+    void emplace(Args&&... args) noexcept
+        requires Constructable<T, Args...>
+    {
+        clear();
+        value_.construct(spp::forward<Args>(args)...);
+        ok_ = true;
+    }
+
+    void clear() noexcept {
+        if constexpr(Must_Destruct<T>) {
+            if(ok_) value_.destruct();
+        }
+        ok_ = false;
+    }
+
+    Opt clone() const noexcept
+        requires Clone<T> || Copy_Constructable<T>
+    {
+        if(!ok_) return Opt{};
+        if constexpr(Clone<T>) {
+            return Opt{value_->clone()};
+        } else {
+            static_assert(Copy_Constructable<T>);
+            return Opt{*value_};
+        }
+    }
+
+    [[nodiscard]] T& value_or(T& other) noexcept {
+        if(ok_) return *value_;
+        return other;
+    }
+
+    [[nodiscard]] T& operator*() noexcept {
+        assert(ok_);
+        return *value_;
+    }
+    [[nodiscard]] const T& operator*() const noexcept {
+        assert(ok_);
+        return *value_;
+    }
+
+    [[nodiscard]] T* operator->() noexcept {
+        assert(ok_);
+        return &*value_;
+    }
+    [[nodiscard]] const T* operator->() const noexcept {
+        assert(ok_);
+        return &*value_;
+    }
+
+    [[nodiscard]] bool ok() const noexcept {
+        return ok_;
+    }
+
+private:
+    bool ok_ = false;
+    Storage<T> value_;
+
+    friend struct Reflect::Refl<Opt>;
+};
+
+template<typename T>
+SPP_TEMPLATE_RECORD(Opt, T, SPP_FIELD(ok_), SPP_FIELD(value_));
+
+namespace Format {
+
+template<Reflectable T>
+struct Measure<Opt<T>> {
+    [[nodiscard]] static u64 measure(const Opt<T>& opt) noexcept {
+        if(opt.ok()) return 5 + Measure<T>::measure(*opt);
+        return 9;
+    }
+};
+template<Allocator O, Reflectable T>
+struct Write<O, Opt<T>> {
+    [[nodiscard]] static u64 write(String<O>& output, u64 idx, const Opt<T>& opt) noexcept {
+        if(!opt.ok()) return output.write(idx, "Opt{None}"_v);
+        idx = output.write(idx, "Opt{"_v);
+        idx = Write<O, T>::write(output, idx, *opt);
+        return output.write(idx, '}');
+    }
+};
+
+} // namespace Format
+
+} // namespace spp
