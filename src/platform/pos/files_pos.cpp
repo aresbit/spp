@@ -61,6 +61,49 @@ namespace spp::Files {
     return File_Result<u64>::ok(data.length());
 }
 
+[[nodiscard]] File_Result<u64> pread_result(String_View path_, u64 offset, Slice<u8> out) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_RDONLY);
+    }
+    if(fd == -1) {
+        warn("Failed to open file %: %", path_, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+
+    ssize_t ret = pread(fd, out.data(), out.length(), static_cast<off_t>(offset));
+    if(ret == -1) {
+        warn("Failed to pread file %: %", path_, Log::sys_error());
+        close(fd);
+        return File_Result<u64>::err("pread_failed"_v);
+    }
+    close(fd);
+    return File_Result<u64>::ok(static_cast<u64>(ret));
+}
+
+[[nodiscard]] File_Result<u64> pwrite_result(String_View path_, u64 offset,
+                                             Slice<const u8> data) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_WRONLY | O_CREAT, 0644);
+    }
+    if(fd == -1) {
+        warn("Failed to open file %: %", path_, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+
+    ssize_t ret = pwrite(fd, data.data(), data.length(), static_cast<off_t>(offset));
+    if(ret == -1) {
+        warn("Failed to pwrite file %: %", path_, Log::sys_error());
+        close(fd);
+        return File_Result<u64>::err("pwrite_failed"_v);
+    }
+    close(fd);
+    return File_Result<u64>::ok(static_cast<u64>(ret));
+}
+
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path_) noexcept {
     Region(R) {
         auto path = path_.terminate<Mregion<R>>();
