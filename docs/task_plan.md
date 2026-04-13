@@ -33,8 +33,8 @@ Scope baseline: `docs/spp_design.md`
 ### Phase 3: Functional Layer Alignment
 - [x] Result combinators (`map`, `map_err`, `and_then`, `or_else`)
 - [x] Pattern matching alignment and API cleanup
-- [ ] Immutable collection behavior audit vs design doc
-- Status: in progress
+- [x] Immutable collection behavior audit vs design doc
+- Status: completed (for current baseline)
 
 ### Phase 4: Concurrency & Async Alignment
 - [ ] Channel abstractions
@@ -52,6 +52,7 @@ Scope baseline: `docs/spp_design.md`
 - `333b187` migrate file and async io APIs toward Result
 - `pending` migrate udp recv path toward Result (with compatibility wrapper)
 - `pending` add free `match(...)` API for Variant
+- `pending` add const/non-mutating lookup path for string-keyed Map
 - `pending` add Result combinators (`map/map_err/and_then/or_else`)
 - `pending` migrate format1 parse APIs toward Result (with compatibility wrappers)
 - `f353320` add core Result type for explicit error handling
@@ -69,6 +70,6 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Immediate Next Step
-1. Complete immutable container behavior audit: add const/non-mutating lookup path to `Map`.
-2. Add test coverage for immutable lookup API.
-3. `make test` and commit as one feature.
+1. Start Phase 4 concurrency alignment with channel abstractions (`Sender`/`Receiver` baseline API).
+2. Add minimal channel tests and wire into `make test`.
+3. Keep compatibility-first strategy and one feature per commit.

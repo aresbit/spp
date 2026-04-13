@@ -297,7 +297,26 @@ struct Map {
         return {};
     }
 
+    [[nodiscard]] Opt<Ref<const V>> try_get(String_View key) const noexcept
+        requires(Any_String<K>)
+    {
+        if(empty()) return {};
+        if(auto idx = try_get_<String_View>(key); idx.ok()) {
+            return Opt<Ref<const V>>{data_[*idx].data->second};
+        }
+        return {};
+    }
+
     [[nodiscard]] V& get(String_View key) noexcept
+        requires(Any_String<K>)
+    {
+        if(auto idx = try_get_<String_View>(key); idx.ok()) {
+            return data_[*idx].data->second;
+        }
+        die("Failed to find key %!", key);
+    }
+
+    [[nodiscard]] const V& get(String_View key) const noexcept
         requires(Any_String<K>)
     {
         if(auto idx = try_get_<String_View>(key); idx.ok()) {

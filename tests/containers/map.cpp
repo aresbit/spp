@@ -124,6 +124,14 @@ i32 main() {
         Map<String_View, i32> sv_i{Pair{"Hello"_v, 1}, Pair{"World"_v, 2}};
 
         Map<String_View, String_View> sv{Pair{"Hello"_v, "World"_v}};
+        const auto& csv = sv;
+        assert(csv.contains("Hello"_v));
+        assert(csv.get("Hello"_v) == "World"_v);
+        auto maybe = csv.try_get("Hello"_v);
+        assert(maybe.ok());
+        assert(**maybe == "World"_v);
+        auto missing = csv.try_get("Missing"_v);
+        assert(!missing.ok());
 
         Map<String_View, String_View> sv2 = sv.clone();
         Map<String_View, String_View> sv3 = move(sv2);
