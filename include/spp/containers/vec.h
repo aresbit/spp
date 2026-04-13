@@ -271,6 +271,8 @@ private:
     u64 length_ = 0;
     u64 capacity_ = 0;
 
+    template<typename T2, Allocator A2>
+    friend struct Vec;
     friend struct Reflect::Refl<Vec>;
 };
 

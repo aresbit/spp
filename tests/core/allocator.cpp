@@ -29,6 +29,20 @@ i32 main() {
             A::free(ptr);
 
             {
+                Vec<i32, Mhidden> hidden_vec;
+                hidden_vec.push(1);
+                hidden_vec.push(2);
+                hidden_vec.push(3);
+                assert(hidden_vec.length() == 3);
+
+                Vec<i32, Mdefault> default_vec = hidden_vec.clone<Mdefault>();
+                assert(default_vec.length() == hidden_vec.length());
+                for(u64 i = 0; i < default_vec.length(); i++) {
+                    assert(default_vec[i] == hidden_vec[i]);
+                }
+            }
+
+            {
                 for(u64 i = 0; i < 100; i++) {
                     i32* n = Mpool::make<i32>();
                     Mpool::destroy(n);
