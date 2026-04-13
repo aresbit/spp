@@ -66,12 +66,12 @@ struct Box {
     [[nodiscard]] Box<T, R> clone() const noexcept
         requires(Clone<T> || Copy_Constructable<T>)
     {
-        if(!data_) return Box{};
+        if(!data_) return Box<T, R>{};
         if constexpr(Clone<T>) {
-            return Box{data_->clone()};
+            return Box<T, R>{data_->clone()};
         } else {
             static_assert(Copy_Constructable<T>);
-            return Box{*data_};
+            return Box<T, R>{*data_};
         }
     }
 

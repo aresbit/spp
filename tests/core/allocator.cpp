@@ -41,6 +41,12 @@ i32 main() {
                     assert(default_vec[i] == hidden_vec[i]);
                 }
             }
+            {
+                Box<i32, Mhidden> hidden_box{42};
+                Box<i32, Mdefault> default_box = hidden_box.clone<Mdefault>();
+                assert(default_box.ok());
+                assert(*default_box == 42);
+            }
 
             {
                 for(u64 i = 0; i < 100; i++) {
