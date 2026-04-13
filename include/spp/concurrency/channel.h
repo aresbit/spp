@@ -5,6 +5,13 @@
 
 namespace spp::Concurrency {
 
+enum class Channel_Error : u8 {
+    closed,
+    disconnected,
+    full,
+    empty,
+};
+
 template<Move_Constructable T, Scalar_Allocator A>
 struct Mpmc_Receiver;
 
@@ -65,36 +72,42 @@ struct Mpmc_Sender {
         return state_.ok();
     }
 
-    [[nodiscard]] Result<u64, String_View> send(T&& value) noexcept {
-        if(!state_.ok()) return Result<u64, String_View>::err("channel_closed"_v);
+    [[nodiscard]] Result<u64, Channel_Error> send(T&& value) noexcept {
+        if(!state_.ok()) return Result<u64, Channel_Error>::err(Channel_Error::closed);
 
         Thread::Lock lock{state_->mutex};
         while(state_->queue.full() && !state_->closed && state_->receiver_count > 0) {
             state_->not_full.wait(state_->mutex);
         }
         if(state_->closed || state_->receiver_count == 0) {
-            return Result<u64, String_View>::err("channel_closed"_v);
+            if(state_->closed) return Result<u64, Channel_Error>::err(Channel_Error::closed);
+            return Result<u64, Channel_Error>::err(Channel_Error::disconnected);
         }
         state_->queue.push(spp::move(value));
         state_->not_empty.signal();
-        return Result<u64, String_View>::ok(1);
+        return Result<u64, Channel_Error>::ok(1);
     }
 
-    [[nodiscard]] Result<u64, String_View> send(const T& value) noexcept
+    [[nodiscard]] Result<u64, Channel_Error> send(const T& value) noexcept
         requires Copy_Constructable<T>
     {
         return send(T{value});
     }
 
-    [[nodiscard]] bool try_send(T&& value) noexcept {
-        if(!state_.ok()) return false;
+    [[nodiscard]] Result<u64, Channel_Error> try_send_result(T&& value) noexcept {
+        if(!state_.ok()) return Result<u64, Channel_Error>::err(Channel_Error::closed);
         Thread::Lock lock{state_->mutex};
-        if(state_->closed || state_->receiver_count == 0 || state_->queue.full()) {
-            return false;
-        }
+        if(state_->closed) return Result<u64, Channel_Error>::err(Channel_Error::closed);
+        if(state_->receiver_count == 0)
+            return Result<u64, Channel_Error>::err(Channel_Error::disconnected);
+        if(state_->queue.full()) return Result<u64, Channel_Error>::err(Channel_Error::full);
         state_->queue.push(spp::move(value));
         state_->not_empty.signal();
-        return true;
+        return Result<u64, Channel_Error>::ok(1);
+    }
+
+    [[nodiscard]] bool try_send(T&& value) noexcept {
+        return try_send_result(spp::move(value)).ok();
     }
 
     void close() noexcept {
@@ -120,7 +133,6 @@ private:
             if(state_->sender_count > 0) {
                 state_->sender_count--;
                 if(state_->sender_count == 0) {
-                    state_->closed = true;
                     state_->not_empty.broadcast();
                     state_->not_full.broadcast();
                 }
@@ -174,32 +186,43 @@ struct Mpmc_Receiver {
         return state_.ok();
     }
 
-    [[nodiscard]] Result<T, String_View> recv() noexcept {
-        if(!state_.ok()) return Result<T, String_View>::err("channel_closed"_v);
+    [[nodiscard]] Result<T, Channel_Error> recv() noexcept {
+        if(!state_.ok()) return Result<T, Channel_Error>::err(Channel_Error::closed);
 
         Thread::Lock lock{state_->mutex};
         while(state_->queue.empty() && !state_->closed && state_->sender_count > 0) {
             state_->not_empty.wait(state_->mutex);
         }
         if(state_->queue.empty()) {
-            return Result<T, String_View>::err("channel_closed"_v);
+            if(state_->closed) return Result<T, Channel_Error>::err(Channel_Error::closed);
+            return Result<T, Channel_Error>::err(Channel_Error::disconnected);
         }
 
         T ret = spp::move(state_->queue.front());
         state_->queue.pop();
         state_->not_full.signal();
-        return Result<T, String_View>::ok(spp::move(ret));
+        return Result<T, Channel_Error>::ok(spp::move(ret));
     }
 
-    [[nodiscard]] Opt<T> try_recv() noexcept {
-        if(!state_.ok()) return {};
-
+    [[nodiscard]] Result<T, Channel_Error> try_recv_result() noexcept {
+        if(!state_.ok()) return Result<T, Channel_Error>::err(Channel_Error::closed);
         Thread::Lock lock{state_->mutex};
-        if(state_->queue.empty()) return {};
+        if(state_->queue.empty()) {
+            if(state_->closed) return Result<T, Channel_Error>::err(Channel_Error::closed);
+            if(state_->sender_count == 0)
+                return Result<T, Channel_Error>::err(Channel_Error::disconnected);
+            return Result<T, Channel_Error>::err(Channel_Error::empty);
+        }
         T ret = spp::move(state_->queue.front());
         state_->queue.pop();
         state_->not_full.signal();
-        return Opt<T>{spp::move(ret)};
+        return Result<T, Channel_Error>::ok(spp::move(ret));
+    }
+
+    [[nodiscard]] Opt<T> try_recv() noexcept {
+        auto result = try_recv_result();
+        if(!result.ok()) return {};
+        return Opt<T>{spp::move(result.unwrap())};
     }
 
     void close() noexcept {
@@ -225,7 +248,6 @@ private:
             if(state_->receiver_count > 0) {
                 state_->receiver_count--;
                 if(state_->receiver_count == 0) {
-                    state_->closed = true;
                     state_->not_empty.broadcast();
                     state_->not_full.broadcast();
                 }

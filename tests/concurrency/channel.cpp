@@ -14,6 +14,16 @@ i32 main() {
 
         auto none = receiver.try_recv();
         assert(!none.ok());
+        auto none_result = receiver.try_recv_result();
+        assert(!none_result.ok());
+        assert(none_result.unwrap_err() == Concurrency::Channel_Error::empty);
+
+        assert(sender.send(1).ok());
+        auto full = sender.try_send_result(2);
+        assert(!full.ok());
+        assert(full.unwrap_err() == Concurrency::Channel_Error::full);
+        auto one = receiver.recv();
+        assert(one.ok() && one.unwrap() == 1);
     }
 
     Trace("Mpmc multi producer multi consumer") {
@@ -76,6 +86,15 @@ i32 main() {
         sender.close();
         auto got = receiver.recv();
         assert(!got.ok());
+        assert(got.unwrap_err() == Concurrency::Channel_Error::closed);
+    }
+
+    Trace("Mpmc disconnected") {
+        auto [sender, receiver] = Concurrency::mpmc_channel<i32>(2);
+        receiver.clear();
+        auto sent = sender.send(1);
+        assert(!sent.ok());
+        assert(sent.unwrap_err() == Concurrency::Channel_Error::disconnected);
     }
 
     return 0;
