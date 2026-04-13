@@ -1,6 +1,65 @@
 
 #include "test.h"
 
+namespace spp {
+
+struct Counting_Key {
+    static inline i32 live = 0;
+    i32 value = 0;
+
+    Counting_Key() noexcept {
+        live++;
+    }
+    explicit Counting_Key(i32 v) noexcept : value(v) {
+        live++;
+    }
+    Counting_Key(const Counting_Key& src) noexcept : value(src.value) {
+        live++;
+    }
+    Counting_Key(Counting_Key&& src) noexcept : value(src.value) {
+        live++;
+    }
+    ~Counting_Key() noexcept {
+        live--;
+    }
+
+    [[nodiscard]] bool operator==(const Counting_Key& other) const noexcept {
+        return value == other.value;
+    }
+};
+
+struct Counting_Value {
+    static inline i32 live = 0;
+    i32 value = 0;
+
+    Counting_Value() noexcept {
+        live++;
+    }
+    explicit Counting_Value(i32 v) noexcept : value(v) {
+        live++;
+    }
+    Counting_Value(const Counting_Value& src) noexcept : value(src.value) {
+        live++;
+    }
+    Counting_Value(Counting_Value&& src) noexcept : value(src.value) {
+        live++;
+    }
+    ~Counting_Value() noexcept {
+        live--;
+    }
+};
+
+namespace Hash {
+template<>
+struct Hash<Counting_Key> {
+    [[nodiscard]] static u64 hash(const Counting_Key& key) noexcept {
+        return squirrel5(static_cast<u64>(key.value));
+    }
+};
+} // namespace Hash
+
+} // namespace spp
+
 i32 main() {
     Test test{"map"_v};
     Trace("Map") {
@@ -75,6 +134,22 @@ i32 main() {
         for(i32 i = 0; i < 40; i++) {
             ff.insert(i, []() { info("Hello"); });
         }
+
+        {
+            assert(Counting_Key::live == 0);
+            assert(Counting_Value::live == 0);
+            Map<Counting_Key, Counting_Value> lifecycle;
+            for(i32 i = 0; i < 128; i++) {
+                lifecycle.insert(Counting_Key{i}, Counting_Value{i * 2});
+            }
+            assert(lifecycle.length() == 128);
+            for(i32 i = 0; i < 64; i++) {
+                assert(lifecycle.try_erase(Counting_Key{i}));
+            }
+            assert(lifecycle.length() == 64);
+        }
+        assert(Counting_Key::live == 0);
+        assert(Counting_Value::live == 0);
     }
     return 0;
 }

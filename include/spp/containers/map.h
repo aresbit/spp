@@ -31,14 +31,24 @@ struct Map_Slot {
 
     constexpr Map_Slot(Map_Slot&& src) noexcept {
         hash = src.hash;
-        src.hash = EMPTY;
-        if(hash != EMPTY) data.construct(spp::move(*src.data));
+        if(hash != EMPTY) {
+            data.construct(spp::move(*src.data));
+            if constexpr(Must_Destruct<Pair<K, V>>) {
+                src.data.destruct();
+            }
+            src.hash = EMPTY;
+        }
     }
     constexpr Map_Slot& operator=(Map_Slot&& src) noexcept {
         this->~Map_Slot();
         hash = src.hash;
-        src.hash = EMPTY;
-        if(hash != EMPTY) data.construct(spp::move(*src.data));
+        if(hash != EMPTY) {
+            data.construct(spp::move(*src.data));
+            if constexpr(Must_Destruct<Pair<K, V>>) {
+                src.data.destruct();
+            }
+            src.hash = EMPTY;
+        }
         return *this;
     }
 
