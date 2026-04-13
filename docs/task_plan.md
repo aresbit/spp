@@ -26,7 +26,7 @@ Scope baseline: `docs/spp_design.md`
 - [x] Add `Files::*_result` APIs with compatibility wrappers
 - [x] Add `Async::*_result` APIs with compatibility wrappers
 - [x] Migrate test harness (`tests/test.h`) to Result-based file path
-- [ ] Migrate string/parse path (`reflection/format1`) from `Opt` to `Result`
+- [x] Migrate string/parse path (`reflection/format1`) from `Opt` to `Result`
 - [ ] Migrate network receive/error path to `Result`
 - Status: in progress
 
@@ -50,6 +50,7 @@ Scope baseline: `docs/spp_design.md`
 
 ## Completed Commits (Trace)
 - `333b187` migrate file and async io APIs toward Result
+- `pending` migrate format1 parse APIs toward Result (with compatibility wrappers)
 - `f353320` add core Result type for explicit error handling
 - `829345c` fix map slot move lifecycle during rehash
 - `2ec6ade` fix queue and heap reserve destruction semantics
@@ -65,6 +66,6 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Immediate Next Step
-1. Migrate `include/spp/reflection/format1.h` parse API from `Opt<Pair<...>>` to `Result<Pair<...>, String_View>` with compatibility wrappers.
-2. Update call sites and tests.
+1. Migrate `include/spp/io/net.h` receive API from `Opt<Data>` to `Result<Data, String_View>` with compatibility wrapper.
+2. Update platform network implementations and tests.
 3. `make test` and commit as one feature.

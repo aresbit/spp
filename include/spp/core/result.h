@@ -29,7 +29,11 @@ Err(E) -> Err<E>;
 template<typename T, typename E>
 struct Result {
 
-    Result() noexcept = delete;
+    Result() noexcept
+        requires Default_Constructable<E>
+        : ok_(false) {
+        error_.construct(E{});
+    }
 
     explicit Result(Ok<T>&& ok) noexcept
         requires Move_Constructable<T>
