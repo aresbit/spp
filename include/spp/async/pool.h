@@ -50,6 +50,12 @@ private:
 
 template<Allocator A = Alloc>
 struct Pool {
+    struct Stats {
+        u64 enqueued = 0;
+        u64 stolen = 0;
+        u64 event_enqueued = 0;
+        u64 event_completed = 0;
+    };
 
     explicit Pool() noexcept
         : thread_states{Vec<Thread_State, A>::make(Thread::hardware_threads() - 1)} {
@@ -110,9 +116,18 @@ struct Pool {
     [[nodiscard]] u64 n_threads() const noexcept {
         return thread_states.length();
     }
+    [[nodiscard]] Stats stats() const noexcept {
+        return Stats{
+            .enqueued = metrics_enqueued.load<u64>(),
+            .stolen = metrics_stolen.load<u64>(),
+            .event_enqueued = metrics_event_enqueued.load<u64>(),
+            .event_completed = metrics_event_completed.load<u64>(),
+        };
+    }
 
 private:
     void enqueue(Handle<> job) noexcept {
+        metrics_enqueued.incr();
         for(u64 i = 0; i < thread_states.length(); i++) {
             Thread_State& state = thread_states[i];
             // Race on empty
@@ -136,6 +151,7 @@ private:
     void enqueue_event(Event event, Handle<> job) noexcept {
         Thread::Lock lock(events_mut);
         events_to_enqueue.emplace(spp::move(event), spp::move(job));
+        metrics_event_enqueued.incr();
         pending_events[0].signal();
     }
 
@@ -179,7 +195,10 @@ private:
             }
             victim.mut.unlock();
 
-            if(stolen) return true;
+            if(stolen) {
+                metrics_stolen.incr();
+                return true;
+            }
         }
         return false;
     }
@@ -208,6 +227,7 @@ private:
                 pending_events.pop();
                 pending_event_jobs.pop();
 
+                metrics_event_completed.incr();
                 enqueue(job);
             }
         }
@@ -229,6 +249,10 @@ private:
 
     Thread::Thread<A> event_thread;
     Thread::Mutex events_mut;
+    Thread::Atomic metrics_enqueued;
+    Thread::Atomic metrics_stolen;
+    Thread::Atomic metrics_event_enqueued;
+    Thread::Atomic metrics_event_completed;
 
     template<Allocator>
     friend struct Schedule;

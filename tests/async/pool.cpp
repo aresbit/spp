@@ -151,6 +151,11 @@ i32 main() {
 
             job().block();
         }
+        {
+            auto stats = pool.stats();
+            assert(stats.enqueued > 0);
+            assert(stats.stolen <= stats.enqueued);
+        }
     }
     return 0;
 }
