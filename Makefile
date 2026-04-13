@@ -26,13 +26,13 @@ endif
 CXXFLAGS := $(COMMON_FLAGS) $(OPT_FLAGS)
 LDFLAGS :=
 
-SRCS := src/impl/unify.cpp
+SRCS := src/core/unify.cpp
 
 ifeq ($(OS),Windows_NT)
-  SRCS += src/w32/unify.cpp
+  SRCS += src/platform/w32/unify.cpp
   PLATFORM_LIBS := -lws2_32 -lSynchronization
 else
-  SRCS += src/pos/unify.cpp
+  SRCS += src/platform/pos/unify.cpp
   PLATFORM_LIBS := -lpthread
 endif
 

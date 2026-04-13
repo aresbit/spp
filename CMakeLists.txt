@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(spp LANGUAGES CXX)
 
 set(SPP_SOURCES
-    src/impl/unify.cpp
+    src/core/unify.cpp
 )
 
 if(UNIX AND NOT APPLE)
@@ -11,9 +11,9 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if(WIN32)
-    list(APPEND SPP_SOURCES src/w32/unify.cpp)
+    list(APPEND SPP_SOURCES src/platform/w32/unify.cpp)
 elseif(LINUX OR APPLE)
-    list(APPEND SPP_SOURCES src/pos/unify.cpp)
+    list(APPEND SPP_SOURCES src/platform/pos/unify.cpp)
 else()
     message(FATAL_ERROR "Unsupported OS: only Windows, Linux, and macOS are supported.")
 endif()
@@ -48,4 +48,3 @@ else()
     endif()
     target_compile_options(spp PRIVATE -Wall -Wextra -fno-exceptions -fno-rtti)
 endif()
-
