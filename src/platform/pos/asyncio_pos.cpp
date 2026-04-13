@@ -79,11 +79,12 @@ namespace spp::Async {
     co_return result.ok();
 }
 
-[[nodiscard]] Task<void> wait(Pool<>& pool, u64 ms) noexcept {
+[[nodiscard]] Task<Result<u64, String_View>> wait_result(Pool<>& pool, u64 ms) noexcept {
 
     int fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
     if(fd == -1) {
-        die("Failed to create timerfd: %", Log::sys_error());
+        warn("Failed to create timerfd: %", Log::sys_error());
+        co_return Result<u64, String_View>::err("timer_create_failed"_v);
     }
 
     itimerspec spec = {};
@@ -91,10 +92,17 @@ namespace spp::Async {
     spec.it_value.tv_nsec = (ms % 1000) * 1000000;
 
     if(timerfd_settime(fd, 0, &spec, null) == -1) {
-        die("Failed to set timerfd: %", Log::sys_error());
+        warn("Failed to set timerfd: %", Log::sys_error());
+        close(fd);
+        co_return Result<u64, String_View>::err("timer_set_failed"_v);
     }
 
     co_await pool.event(Async::Event::of_sys(fd, EPOLLIN));
+    co_return Result<u64, String_View>::ok(u64{ms});
+}
+
+[[nodiscard]] Task<void> wait(Pool<>& pool, u64 ms) noexcept {
+    static_cast<void>(co_await wait_result(pool, ms));
 }
 
 } // namespace spp::Async

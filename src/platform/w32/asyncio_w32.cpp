@@ -140,12 +140,12 @@ constexpr u64 SECTOR_SIZE = 4096;
     co_return result.ok();
 }
 
-[[nodiscard]] Task<void> wait(Pool<>& pool, u64 ms) noexcept {
+[[nodiscard]] Task<Result<u64, String_View>> wait_result(Pool<>& pool, u64 ms) noexcept {
 
     HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
     if(timer == INVALID_HANDLE_VALUE) {
         warn("Failed to create waitable timer: %", Log::sys_error());
-        co_return;
+        co_return Result<u64, String_View>::err("timer_create_failed"_v);
     }
 
     LARGE_INTEGER liDueTime;
@@ -154,12 +154,15 @@ constexpr u64 SECTOR_SIZE = 4096;
     if(SetWaitableTimer(timer, &liDueTime, 0, NULL, NULL, 0) == FALSE) {
         warn("Failed to set waitable timer: %", Log::sys_error());
         CloseHandle(timer);
-        co_return;
+        co_return Result<u64, String_View>::err("timer_set_failed"_v);
     }
 
     co_await pool.event(Event::of_sys(timer));
+    co_return Result<u64, String_View>::ok(u64{ms});
+}
 
-    co_return;
+[[nodiscard]] Task<void> wait(Pool<>& pool, u64 ms) noexcept {
+    static_cast<void>(co_await wait_result(pool, ms));
 }
 
 } // namespace spp::Async

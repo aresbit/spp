@@ -77,9 +77,13 @@ namespace spp::Async {
     co_return result.ok();
 }
 
-[[nodiscard]] Task<void> wait(Pool<>&, u64 ms) noexcept {
+[[nodiscard]] Task<Result<u64, String_View>> wait_result(Pool<>&, u64 ms) noexcept {
     Thread::sleep(ms);
-    co_return;
+    co_return Result<u64, String_View>::ok(u64{ms});
+}
+
+[[nodiscard]] Task<void> wait(Pool<>& pool, u64 ms) noexcept {
+    static_cast<void>(co_await wait_result(pool, ms));
 }
 
 } // namespace spp::Async

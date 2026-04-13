@@ -7,6 +7,7 @@
 
 namespace spp::Async {
 
+[[nodiscard]] Task<Result<u64, String_View>> wait_result(Pool<>& pool, u64 ms) noexcept;
 [[nodiscard]] Task<void> wait(Pool<>& pool, u64 ms) noexcept;
 
 [[nodiscard]] Task<Result<Vec<u8, Files::Alloc>, String_View>> read_result(Pool<>& pool,

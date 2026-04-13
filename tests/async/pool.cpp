@@ -140,6 +140,17 @@ i32 main() {
             job().block();
             info("Waited 100ms.");
         }
+        {
+            auto job = [&pool_ = pool]() -> Async::Task<void> {
+                auto& pool = pool_;
+                auto waited = co_await Async::wait_result(pool, 10);
+                assert(waited.ok());
+                assert(waited.unwrap() == 10);
+                co_return;
+            };
+
+            job().block();
+        }
     }
     return 0;
 }
