@@ -3,6 +3,7 @@
 
 #include <sys/event.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 namespace spp::Async {
@@ -61,7 +62,26 @@ void Event::reset() const noexcept {
 }
 
 [[nodiscard]] bool Event::try_wait() const noexcept {
-    return false;
+    int kq = kqueue();
+    if(kq == -1) {
+        die("Failed to create kqueue: %", Log::sys_error());
+    }
+
+    struct kevent wait;
+    EV_SET(&wait, fd, mask, EV_ADD | EV_ENABLE, 0, 0, null);
+    struct kevent signaled;
+    timespec timeout = {.tv_sec = 0, .tv_nsec = 0};
+    int count = kevent(kq, &wait, 1, &signaled, 1, &timeout);
+    close(kq);
+
+    if(count < 0) {
+        die("Failed to poll kevent readiness: %", Log::sys_error());
+    }
+    if(count == 0) return false;
+    if(signaled.flags == EV_ERROR) {
+        die("Failed kevent readiness with error: %", Log::sys_error());
+    }
+    return true;
 }
 
 [[nodiscard]] u64 Event::wait_any(Slice<Event> events) noexcept {

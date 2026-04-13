@@ -62,7 +62,28 @@ void Event::reset() const noexcept {
 }
 
 [[nodiscard]] bool Event::try_wait() const noexcept {
-    return false;
+    int epfd = epoll_create1(EPOLL_CLOEXEC);
+    if(epfd == -1) {
+        die("Failed to create epoll: %", Log::sys_error());
+    }
+
+    epoll_event in = {};
+    in.events = mask;
+    in.data.fd = fd;
+    if(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &in) == -1) {
+        close(epfd);
+        die("Failed to add event to epoll: %", Log::sys_error());
+    }
+
+    epoll_event out = {};
+    int ret = epoll_wait(epfd, &out, 1, 0);
+    if(close(epfd) == -1) {
+        die("Failed to close epoll fd: %", Log::sys_error());
+    }
+    if(ret == -1) {
+        die("Failed to poll event readiness: %", Log::sys_error());
+    }
+    return ret == 1;
 }
 
 [[nodiscard]] u64 Event::wait_any(Slice<Event> events) noexcept {
