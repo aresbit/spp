@@ -31,6 +31,25 @@ i32 main() {
         assert(!cmap.contains(777));
     }
 
+    Trace("Concurrent map composite ops") {
+        Concurrency::Concurrent_Map<i32, i32> cmap;
+        assert(cmap.get_or_insert_with(1, [] { return 5; }) == 5);
+        assert(cmap.get_or_insert_with(1, [] { return 99; }) == 5);
+
+        auto& v = cmap.upsert(1, [] { return 10; }, [](i32& x) { x += 3; });
+        assert(v == 8);
+        auto& v2 = cmap.upsert(2, [] { return 7; }, [](i32& x) { x += 10; });
+        assert(v2 == 7);
+
+        assert(cmap.update_if(2, [](i32& x) { x *= 2; }));
+        auto got2 = cmap.try_get_copy(2);
+        assert(got2.ok() && *got2 == 14);
+
+        assert(!cmap.erase_if(2, [](const i32& x) { return x < 10; }));
+        assert(cmap.erase_if(2, [](const i32& x) { return x == 14; }));
+        assert(!cmap.contains(2));
+    }
+
     Trace("Concurrent vec push/pop") {
         Concurrency::Concurrent_Vec<i32> cvec;
         constexpr i32 threads = 4;

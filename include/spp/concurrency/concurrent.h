@@ -42,6 +42,75 @@ struct Concurrent_Map {
         return map_.try_erase(key);
     }
 
+    template<typename F>
+    V& get_or_insert_with(const K& key, F&& make_value) noexcept
+        requires Copy_Constructable<K> && Invocable<F> && Constructable<V, Invoke_Result<F>>
+    {
+        Thread::Lock lock{mutex_};
+        auto found = map_.try_get(key);
+        if(found.ok()) return **found;
+        return map_.insert(K{key}, V{spp::forward<F>(make_value)()});
+    }
+
+    template<typename F>
+    V& get_or_insert_with(K&& key, F&& make_value) noexcept
+        requires Invocable<F> && Constructable<V, Invoke_Result<F>>
+    {
+        Thread::Lock lock{mutex_};
+        auto found = map_.try_get(key);
+        if(found.ok()) return **found;
+        return map_.insert(spp::move(key), V{spp::forward<F>(make_value)()});
+    }
+
+    template<typename FI, typename FU>
+    V& upsert(const K& key, FI&& on_insert, FU&& on_update) noexcept
+        requires Copy_Constructable<K> && Invocable<FI> && Constructable<V, Invoke_Result<FI>> &&
+                 Invocable<FU, V&>
+    {
+        Thread::Lock lock{mutex_};
+        auto found = map_.try_get(key);
+        if(found.ok()) {
+            spp::forward<FU>(on_update)(**found);
+            return **found;
+        }
+        return map_.insert(K{key}, V{spp::forward<FI>(on_insert)()});
+    }
+
+    template<typename FI, typename FU>
+    V& upsert(K&& key, FI&& on_insert, FU&& on_update) noexcept
+        requires Invocable<FI> && Constructable<V, Invoke_Result<FI>> && Invocable<FU, V&>
+    {
+        Thread::Lock lock{mutex_};
+        auto found = map_.try_get(key);
+        if(found.ok()) {
+            spp::forward<FU>(on_update)(**found);
+            return **found;
+        }
+        return map_.insert(spp::move(key), V{spp::forward<FI>(on_insert)()});
+    }
+
+    template<typename F>
+    [[nodiscard]] bool update_if(const K& key, F&& updater) noexcept
+        requires Invocable<F, V&>
+    {
+        Thread::Lock lock{mutex_};
+        auto found = map_.try_get(key);
+        if(!found.ok()) return false;
+        spp::forward<F>(updater)(**found);
+        return true;
+    }
+
+    template<typename F>
+    [[nodiscard]] bool erase_if(const K& key, F&& predicate) noexcept
+        requires Invocable<F, const V&> && Same<Invoke_Result<F, const V&>, bool>
+    {
+        Thread::Lock lock{mutex_};
+        auto found = map_.try_get(key);
+        if(!found.ok()) return false;
+        if(!spp::forward<F>(predicate)(**found)) return false;
+        return map_.try_erase(key);
+    }
+
     [[nodiscard]] Opt<V> try_get_copy(const K& key) const noexcept
         requires Clone<V> || Copy_Constructable<V>
     {
