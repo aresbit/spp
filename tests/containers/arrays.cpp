@@ -10,6 +10,23 @@ struct X {
     i32 i;
 };
 
+struct Counted {
+    static inline i32 live = 0;
+
+    Counted() noexcept {
+        live++;
+    }
+    Counted(const Counted&) noexcept {
+        live++;
+    }
+    Counted(Counted&&) noexcept {
+        live++;
+    }
+    ~Counted() noexcept {
+        live--;
+    }
+};
+
 i32 main() {
     Test test{"empty"_v};
     Trace("Array") {
@@ -152,6 +169,16 @@ i32 main() {
         for(i32 i = 0; i < 10; i++) {
             vf.push([]() { info("Hello"); });
         }
+
+        {
+            assert(Counted::live == 0);
+            Vec<Counted> counted;
+            for(i32 i = 0; i < 32; i++) {
+                counted.emplace();
+            }
+            assert(Counted::live == 32);
+        }
+        assert(Counted::live == 0);
 
         static_cast<void>(m2);
         static_cast<void>(s3);
