@@ -206,6 +206,33 @@ namespace spp::Files {
     }
 }
 
+[[nodiscard]] File_Result<u64> acquire_lock_result(String_View lock_path_) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto lock_path = lock_path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(lock_path.data()), O_WRONLY | O_CREAT | O_EXCL, 0644);
+    }
+    if(fd == -1) {
+        if(errno == EEXIST) return File_Result<u64>::err("lock_exists"_v);
+        warn("Failed to acquire lock %: %", lock_path_, Log::sys_error());
+        return File_Result<u64>::err("lock_failed"_v);
+    }
+    close(fd);
+    return File_Result<u64>::ok(0);
+}
+
+[[nodiscard]] File_Result<u64> release_lock_result(String_View lock_path_) noexcept {
+    Region(R) {
+        auto lock_path = lock_path_.terminate<Mregion<R>>();
+        if(unlink(reinterpret_cast<const char*>(lock_path.data())) == -1) {
+            if(errno == ENOENT) return File_Result<u64>::ok(0);
+            warn("Failed to release lock %: %", lock_path_, Log::sys_error());
+            return File_Result<u64>::err("unlock_failed"_v);
+        }
+        return File_Result<u64>::ok(0);
+    }
+}
+
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path_) noexcept {
     Region(R) {
         auto path = path_.terminate<Mregion<R>>();

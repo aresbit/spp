@@ -23,6 +23,8 @@ using File_Result = Result<T, String_View>;
 [[nodiscard]] File_Result<u64> rename_result(String_View from, String_View to) noexcept;
 [[nodiscard]] File_Result<u64> mkdir_result(String_View path) noexcept;
 [[nodiscard]] File_Result<u64> rmdir_result(String_View path) noexcept;
+[[nodiscard]] File_Result<u64> acquire_lock_result(String_View lock_path) noexcept;
+[[nodiscard]] File_Result<u64> release_lock_result(String_View lock_path) noexcept;
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path) noexcept;
 
 [[nodiscard]] Opt<Vec<u8, Alloc>> read(String_View path) noexcept;

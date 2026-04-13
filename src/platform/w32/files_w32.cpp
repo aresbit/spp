@@ -305,4 +305,43 @@ namespace spp::Files {
     return File_Result<u64>::ok(0);
 }
 
+[[nodiscard]] File_Result<u64> acquire_lock_result(String_View lock_path) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(lock_path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", lock_path);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+
+    HANDLE handle =
+        CreateFileW(ucs2_path, GENERIC_WRITE, 0, null, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, null);
+    if(handle == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        if(err == ERROR_FILE_EXISTS || err == ERROR_ALREADY_EXISTS) {
+            return File_Result<u64>::err("lock_exists"_v);
+        }
+        warn("Failed to acquire lock %: %", lock_path, Log::sys_error());
+        return File_Result<u64>::err("lock_failed"_v);
+    }
+    CloseHandle(handle);
+    return File_Result<u64>::ok(0);
+}
+
+[[nodiscard]] File_Result<u64> release_lock_result(String_View lock_path) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(lock_path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", lock_path);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+
+    if(DeleteFileW(ucs2_path) == FALSE) {
+        DWORD err = GetLastError();
+        if(err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND) {
+            return File_Result<u64>::ok(0);
+        }
+        warn("Failed to release lock %: %", lock_path, Log::sys_error());
+        return File_Result<u64>::err("unlock_failed"_v);
+    }
+    return File_Result<u64>::ok(0);
+}
+
 } // namespace spp::Files
