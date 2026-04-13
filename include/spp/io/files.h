@@ -18,6 +18,9 @@ using File_Result = Result<T, String_View>;
                                              Slice<const u8> data) noexcept;
 [[nodiscard]] File_Result<u64> truncate_result(String_View path, u64 size) noexcept;
 [[nodiscard]] File_Result<u64> fsync_result(String_View path) noexcept;
+[[nodiscard]] File_Result<bool> exists_result(String_View path) noexcept;
+[[nodiscard]] File_Result<u64> remove_result(String_View path) noexcept;
+[[nodiscard]] File_Result<u64> rename_result(String_View from, String_View to) noexcept;
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path) noexcept;
 
 [[nodiscard]] Opt<Vec<u8, Alloc>> read(String_View path) noexcept;

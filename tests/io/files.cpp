@@ -6,6 +6,23 @@ i32 main() {
     Test test{"empty"_v};
 
     String_View path = "tmp_files_io.bin"_v;
+    String_View renamed = "tmp_files_io_renamed.bin"_v;
+    {
+        auto e = Files::exists_result(path);
+        assert(e.ok());
+        if(e.unwrap()) {
+            auto r = Files::remove_result(path);
+            assert(r.ok());
+        }
+    }
+    {
+        auto e = Files::exists_result(renamed);
+        assert(e.ok());
+        if(e.unwrap()) {
+            auto r = Files::remove_result(renamed);
+            assert(r.ok());
+        }
+    }
     {
         Array<u8, 8> init{u8{'a'}, u8{'b'}, u8{'c'}, u8{'d'}, u8{'e'}, u8{'f'}, u8{'g'}, u8{'h'}};
         auto w = Files::write_result(path, init.slice());
@@ -51,6 +68,28 @@ i32 main() {
     {
         auto f = Files::fsync_result(path);
         assert(f.ok());
+    }
+    {
+        auto ex = Files::exists_result(path);
+        assert(ex.ok() && ex.unwrap());
+    }
+    {
+        auto m = Files::rename_result(path, renamed);
+        assert(m.ok());
+    }
+    {
+        auto ex_old = Files::exists_result(path);
+        auto ex_new = Files::exists_result(renamed);
+        assert(ex_old.ok() && !ex_old.unwrap());
+        assert(ex_new.ok() && ex_new.unwrap());
+    }
+    {
+        auto rm = Files::remove_result(renamed);
+        assert(rm.ok());
+    }
+    {
+        auto ex = Files::exists_result(renamed);
+        assert(ex.ok() && !ex.unwrap());
     }
 
     return 0;

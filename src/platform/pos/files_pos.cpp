@@ -1,7 +1,9 @@
 
 #include <spp/io/files.h>
 
+#include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -140,6 +142,45 @@ namespace spp::Files {
     }
     close(fd);
     return File_Result<u64>::ok(0);
+}
+
+[[nodiscard]] File_Result<bool> exists_result(String_View path_) noexcept {
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        struct stat info;
+        if(stat(reinterpret_cast<const char*>(path.data()), &info) == 0) {
+            return File_Result<bool>::ok(true);
+        }
+        if(errno == ENOENT) {
+            return File_Result<bool>::ok(false);
+        }
+        warn("Failed to stat file %: %", path_, Log::sys_error());
+        return File_Result<bool>::err("stat_failed"_v);
+    }
+}
+
+[[nodiscard]] File_Result<u64> remove_result(String_View path_) noexcept {
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        if(unlink(reinterpret_cast<const char*>(path.data())) == -1) {
+            warn("Failed to remove file %: %", path_, Log::sys_error());
+            return File_Result<u64>::err("remove_failed"_v);
+        }
+        return File_Result<u64>::ok(0);
+    }
+}
+
+[[nodiscard]] File_Result<u64> rename_result(String_View from_, String_View to_) noexcept {
+    Region(R) {
+        auto from = from_.terminate<Mregion<R>>();
+        auto to = to_.terminate<Mregion<R>>();
+        if(::rename(reinterpret_cast<const char*>(from.data()), reinterpret_cast<const char*>(to.data())) ==
+           -1) {
+            warn("Failed to rename file % -> %: %", from_, to_, Log::sys_error());
+            return File_Result<u64>::err("rename_failed"_v);
+        }
+        return File_Result<u64>::ok(0);
+    }
 }
 
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path_) noexcept {

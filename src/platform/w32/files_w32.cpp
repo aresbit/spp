@@ -225,4 +225,55 @@ namespace spp::Files {
     return File_Result<u64>::ok(0);
 }
 
+[[nodiscard]] File_Result<bool> exists_result(String_View path) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", path);
+        return File_Result<bool>::err("path_convert_failed"_v);
+    }
+
+    DWORD attr = GetFileAttributesW(ucs2_path);
+    if(attr == INVALID_FILE_ATTRIBUTES) {
+        DWORD err = GetLastError();
+        if(err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND) {
+            return File_Result<bool>::ok(false);
+        }
+        warn("Failed to stat file %: %", path, Log::sys_error());
+        return File_Result<bool>::err("stat_failed"_v);
+    }
+    return File_Result<bool>::ok(true);
+}
+
+[[nodiscard]] File_Result<u64> remove_result(String_View path) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", path);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+    if(DeleteFileW(ucs2_path) == FALSE) {
+        warn("Failed to remove file %: %", path, Log::sys_error());
+        return File_Result<u64>::err("remove_failed"_v);
+    }
+    return File_Result<u64>::ok(0);
+}
+
+[[nodiscard]] File_Result<u64> rename_result(String_View from, String_View to) noexcept {
+    auto [from_ucs2, from_len] = utf8_to_ucs2(from);
+    if(from_len == 0) {
+        warn("Failed to convert file path %!", from);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+    auto [to_ucs2, to_len] = utf8_to_ucs2(to);
+    if(to_len == 0) {
+        warn("Failed to convert file path %!", to);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+
+    if(MoveFileExW(from_ucs2, to_ucs2, MOVEFILE_REPLACE_EXISTING) == FALSE) {
+        warn("Failed to rename file % -> %: %", from, to, Log::sys_error());
+        return File_Result<u64>::err("rename_failed"_v);
+    }
+    return File_Result<u64>::ok(0);
+}
+
 } // namespace spp::Files
