@@ -62,6 +62,23 @@ i32 main() {
         assert(v.unwrap().length() == 3);
         assert(v.unwrap()[0] == 1 && v.unwrap()[1] == 2 && v.unwrap()[2] == 3);
     }
+    {
+        Opt<i32> none;
+        auto s0 = Json::stringify(none);
+        assert(s0 == "null"_v);
+
+        Opt<i32> some{7};
+        auto s1 = Json::stringify(some);
+        assert(s1 == "7"_v);
+    }
+    {
+        auto ok = Result<i32, String_View>::ok(11);
+        auto e = Result<i32, String_View>::err("bad"_v);
+        auto so = Json::stringify(ok);
+        auto se = Json::stringify(e);
+        assert(so == "{\"ok\":11}"_v);
+        assert(se == "{\"err\":\"bad\"}"_v);
+    }
 
     return 0;
 }

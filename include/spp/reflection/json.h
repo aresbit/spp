@@ -145,6 +145,28 @@ inline void write_json(Builder<A>& b, const Map<K, V, M>& m) noexcept {
     }
 }
 
+template<Allocator A, typename T>
+inline void write_json(Builder<A>& b, const Opt<T>& v) noexcept {
+    if(!v.ok()) {
+        b.append("null");
+        return;
+    }
+    write_json(b, *v);
+}
+
+template<Allocator A, typename T, typename E>
+inline void write_json(Builder<A>& b, const Result<T, E>& r) noexcept {
+    if(r.ok()) {
+        b.append("{\"ok\":");
+        write_json(b, r.unwrap());
+        b.push('}');
+    } else {
+        b.append("{\"err\":");
+        write_json(b, r.unwrap_err());
+        b.push('}');
+    }
+}
+
 template<Allocator A, Reflect::Enum E>
 inline void write_json_enum(Builder<A>& b, const E& value) noexcept {
     String_View name = "Invalid"_v;
