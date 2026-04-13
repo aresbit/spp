@@ -152,6 +152,19 @@ i32 main() {
             job().block();
         }
         {
+            Async::Cancel_Token token;
+            token.cancel();
+            auto job = [&pool_ = pool, &token_ = token]() -> Async::Task<void> {
+                auto& pool = pool_;
+                auto& token = token_;
+                auto waited = co_await Async::wait_result(pool, 10, token);
+                assert(!waited.ok());
+                assert(waited.unwrap_err() == "cancelled"_v);
+                co_return;
+            };
+            job().block();
+        }
+        {
             auto stats = pool.stats();
             assert(stats.enqueued > 0);
             assert(stats.stolen <= stats.enqueued);
