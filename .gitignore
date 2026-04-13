@@ -1,3 +1,5 @@
 build/
 debug.log
+tests/debug.log
 tests/*.corrected
+tests/*/*.corrected

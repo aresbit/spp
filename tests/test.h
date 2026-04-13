@@ -19,7 +19,23 @@ struct Test {
         Log::unsubscribe(token);
 
         auto expect = name.append<Mdefault>(".expect"_v);
-        expected = move(*Files::read(expect.view()));
+
+        Opt<Vec<u8, Files::Alloc>> loaded{};
+        loaded = Files::read(expect.view());
+        if(!loaded.ok()) {
+            auto parent = "../"_v.append<Mdefault>(expect.view());
+            loaded = Files::read(parent.view());
+        }
+        if(!loaded.ok()) {
+            auto grand_parent = "../../"_v.append<Mdefault>(expect.view());
+            loaded = Files::read(grand_parent.view());
+        }
+        if(!loaded.ok()) {
+            auto corrected = name.append<Mdefault>(".corrected"_v);
+            static_cast<void>(Files::write(corrected.view(), result.slice()));
+            Libc::exit(1);
+        }
+        expected = move(*loaded);
 
         bool differs = false;
         if(result.length() != expected.length()) {

@@ -40,9 +40,9 @@ OBJS := $(addprefix $(OBJ_DIR)/,$(SRCS:.cpp=.o))
 LIB := $(LIB_DIR)/libspp.a
 SMOKE_SRC := examples/smoke.cpp
 SMOKE_BIN := $(BIN_DIR)/spp_smoke
-TEST_SRCS := $(wildcard tests/*.cpp)
-TEST_BINS := $(patsubst tests/%.cpp,$(BIN_DIR)/test_%,$(TEST_SRCS))
-TEST_NAMES := $(patsubst tests/%.cpp,%,$(TEST_SRCS))
+TEST_SRCS := $(shell find tests -type f -name '*.cpp' | sort)
+TEST_BINS := $(patsubst tests/%.cpp,$(BIN_DIR)/tests/%,$(TEST_SRCS))
+TEST_RELS := $(patsubst tests/%.cpp,%,$(TEST_SRCS))
 
 .PHONY: all lib smoke test format clean print-config
 
@@ -55,9 +55,13 @@ smoke: $(SMOKE_BIN)
 
 test: $(TEST_BINS)
 	@set -e; \
-	for name in $(TEST_NAMES); do \
-		echo "[test] $$name"; \
-		(cd tests && ../$(BIN_DIR)/test_$$name); \
+	root="$(CURDIR)"; \
+	for rel in $(TEST_RELS); do \
+		src="tests/$$rel.cpp"; \
+		bin="$(BIN_DIR)/tests/$$rel"; \
+		dir="$$(dirname "$$src")"; \
+		echo "[test] $$rel"; \
+		(cd "$$dir" && "$$root/$$bin"); \
 	done
 
 $(LIB): $(OBJS)
@@ -72,8 +76,8 @@ $(SMOKE_BIN): $(SMOKE_SRC) $(LIB)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(APP_INCLUDES) $< $(LIB) $(PLATFORM_LIBS) $(LDFLAGS) -o $@
 
-$(BIN_DIR)/test_%: tests/%.cpp $(LIB)
-	@mkdir -p $(BIN_DIR)
+$(BIN_DIR)/tests/%: tests/%.cpp $(LIB)
+	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(APP_INCLUDES) -Itests $< $(LIB) $(PLATFORM_LIBS) $(LDFLAGS) -o $@
 
 format:
