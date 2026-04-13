@@ -467,6 +467,8 @@ private:
     u64 usable_ = 0;
     u64 shift_ = 0;
 
+    template<Key K2, Move_Constructable V2, Allocator A2>
+    friend struct Map;
     friend struct Reflect::Refl<Map>;
     template<bool>
     friend struct Iterator;

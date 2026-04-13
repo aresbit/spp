@@ -350,6 +350,8 @@ private:
     u64 last_ = 0;
     u64 capacity_ = 0;
 
+    template<Move_Constructable T2, Allocator A2>
+    friend struct Queue;
     friend struct Reflect::Refl<Queue>;
     template<bool>
     friend struct Iterator;

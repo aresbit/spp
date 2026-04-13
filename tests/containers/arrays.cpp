@@ -287,6 +287,9 @@ i32 main() {
         Queue<i32> v3 = move(v2);
 
         assert(v3.length() == 2);
+        Queue<i32, Mhidden> v4 = v.clone<Mhidden>();
+        assert(v4.length() == 2);
+        assert(v4.front() == 2);
 
         Queue<String_View> sv{"Hello"_v, "World"_v};
         Queue<String_View> sv2 = sv.clone();
@@ -348,6 +351,9 @@ i32 main() {
         Heap<i32> v3 = move(v2);
 
         assert(v3.length() == 3);
+        Heap<i32, Mhidden> v4 = v.clone<Mhidden>();
+        assert(v4.length() == 3);
+        assert(v4.top() == 1);
 
         Heap<String_View> sv{"Hello"_v, "World"_v};
         Heap<String_View> sv2 = sv.clone();

@@ -255,6 +255,8 @@ private:
     u64 length_ = 0;
     u64 capacity_ = 0;
 
+    template<Heapable T2, Allocator A2>
+    friend struct Heap;
     friend struct Reflect::Refl<Heap>;
 };
 

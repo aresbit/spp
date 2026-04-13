@@ -56,6 +56,10 @@ i32 main() {
         Map<i32, i32> v3 = move(v2);
 
         assert(v3.length() == 2);
+        Map<i32, i32, Mhidden> v4 = v.clone<Mhidden>();
+        assert(v4.length() == 2);
+        assert(v4.get(1) == 1);
+        assert(v4.get(3) == 3);
 
         Map<i32, String_View> i_sv{Pair{1, "Hello"_v}, Pair{2, "World"_v}};
         Map<String_View, i32> sv_i{Pair{"Hello"_v, 1}, Pair{"World"_v, 2}};
