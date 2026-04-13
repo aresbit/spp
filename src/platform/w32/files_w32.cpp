@@ -170,4 +170,59 @@ namespace spp::Files {
     return File_Result<u64>::ok(static_cast<u64>(written));
 }
 
+[[nodiscard]] File_Result<u64> truncate_result(String_View path, u64 size) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", path);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+
+    HANDLE handle =
+        CreateFileW(ucs2_path, GENERIC_WRITE, 0, null, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, null);
+    if(handle == INVALID_HANDLE_VALUE) {
+        warn("Failed to open file %: %", path, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+
+    LARGE_INTEGER pos;
+    pos.QuadPart = static_cast<LONGLONG>(size);
+    if(SetFilePointerEx(handle, pos, null, FILE_BEGIN) == FALSE) {
+        warn("Failed to seek file %: %", path, Log::sys_error());
+        CloseHandle(handle);
+        return File_Result<u64>::err("seek_failed"_v);
+    }
+    if(SetEndOfFile(handle) == FALSE) {
+        warn("Failed to truncate file %: %", path, Log::sys_error());
+        CloseHandle(handle);
+        return File_Result<u64>::err("truncate_failed"_v);
+    }
+
+    CloseHandle(handle);
+    return File_Result<u64>::ok(spp::move(size));
+}
+
+[[nodiscard]] File_Result<u64> fsync_result(String_View path) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", path);
+        return File_Result<u64>::err("path_convert_failed"_v);
+    }
+
+    HANDLE handle = CreateFileW(ucs2_path, GENERIC_WRITE, 0, null, OPEN_EXISTING,
+                                FILE_ATTRIBUTE_NORMAL, null);
+    if(handle == INVALID_HANDLE_VALUE) {
+        warn("Failed to open file %: %", path, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+
+    if(FlushFileBuffers(handle) == FALSE) {
+        warn("Failed to fsync file %: %", path, Log::sys_error());
+        CloseHandle(handle);
+        return File_Result<u64>::err("fsync_failed"_v);
+    }
+
+    CloseHandle(handle);
+    return File_Result<u64>::ok(0);
+}
+
 } // namespace spp::Files

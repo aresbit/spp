@@ -104,6 +104,44 @@ namespace spp::Files {
     return File_Result<u64>::ok(static_cast<u64>(ret));
 }
 
+[[nodiscard]] File_Result<u64> truncate_result(String_View path_, u64 size) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_WRONLY | O_CREAT, 0644);
+    }
+    if(fd == -1) {
+        warn("Failed to open file %: %", path_, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+    if(ftruncate(fd, static_cast<off_t>(size)) == -1) {
+        warn("Failed to truncate file %: %", path_, Log::sys_error());
+        close(fd);
+        return File_Result<u64>::err("truncate_failed"_v);
+    }
+    close(fd);
+    return File_Result<u64>::ok(spp::move(size));
+}
+
+[[nodiscard]] File_Result<u64> fsync_result(String_View path_) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_WRONLY);
+    }
+    if(fd == -1) {
+        warn("Failed to open file %: %", path_, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+    if(fsync(fd) == -1) {
+        warn("Failed to fsync file %: %", path_, Log::sys_error());
+        close(fd);
+        return File_Result<u64>::err("fsync_failed"_v);
+    }
+    close(fd);
+    return File_Result<u64>::ok(0);
+}
+
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path_) noexcept {
     Region(R) {
         auto path = path_.terminate<Mregion<R>>();

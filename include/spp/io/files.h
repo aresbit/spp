@@ -16,6 +16,8 @@ using File_Result = Result<T, String_View>;
 [[nodiscard]] File_Result<u64> pread_result(String_View path, u64 offset, Slice<u8> out) noexcept;
 [[nodiscard]] File_Result<u64> pwrite_result(String_View path, u64 offset,
                                              Slice<const u8> data) noexcept;
+[[nodiscard]] File_Result<u64> truncate_result(String_View path, u64 size) noexcept;
+[[nodiscard]] File_Result<u64> fsync_result(String_View path) noexcept;
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path) noexcept;
 
 [[nodiscard]] Opt<Vec<u8, Alloc>> read(String_View path) noexcept;

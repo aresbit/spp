@@ -34,6 +34,24 @@ i32 main() {
         assert(all.ok());
         assert(all.unwrap().length() == 8);
     }
+    {
+        auto t = Files::truncate_result(path, 5);
+        assert(t.ok() && t.unwrap() == 5);
+    }
+    {
+        Array<u8, 8> out{};
+        auto r = Files::pread_result(path, 0, out.slice());
+        assert(r.ok() && r.unwrap() == 5);
+        assert(out[0] == 'a');
+        assert(out[1] == 'b');
+        assert(out[2] == 'X');
+        assert(out[3] == 'Y');
+        assert(out[4] == 'Z');
+    }
+    {
+        auto f = Files::fsync_result(path);
+        assert(f.ok());
+    }
 
     return 0;
 }
