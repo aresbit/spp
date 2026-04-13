@@ -56,5 +56,22 @@ i32 main() {
         assert(sent.unwrap_err() == Concurrency::Channel_Error::disconnected);
     }
 
+    Trace("Async recv_for timeout") {
+        auto [tx, rx] = Concurrency::mpmc_channel<i32>(1);
+        auto got = Async::recv_for(pool, rx, 5).block();
+        assert(!got.ok());
+        assert(got.unwrap_err() == Concurrency::Channel_Error::timeout);
+        tx.close();
+    }
+
+    Trace("Async send_for timeout") {
+        auto [tx, rx] = Concurrency::mpmc_channel<i32>(1);
+        assert(tx.send(1).ok());
+        auto sent = Async::send_for(pool, tx, 2, 5).block();
+        assert(!sent.ok());
+        assert(sent.unwrap_err() == Concurrency::Channel_Error::timeout);
+        rx.close();
+    }
+
     return 0;
 }

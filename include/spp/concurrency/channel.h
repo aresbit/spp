@@ -10,6 +10,7 @@ enum class Channel_Error : u8 {
     disconnected,
     full,
     empty,
+    timeout,
 };
 
 template<Move_Constructable T, Scalar_Allocator A>
