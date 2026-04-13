@@ -27,6 +27,31 @@ struct Counted {
     }
 };
 
+struct Counted_Ordered {
+    static inline i32 live = 0;
+    i32 key = 0;
+
+    Counted_Ordered() noexcept {
+        live++;
+    }
+    explicit Counted_Ordered(i32 v) noexcept : key(v) {
+        live++;
+    }
+    Counted_Ordered(const Counted_Ordered& src) noexcept : key(src.key) {
+        live++;
+    }
+    Counted_Ordered(Counted_Ordered&& src) noexcept : key(src.key) {
+        live++;
+    }
+    ~Counted_Ordered() noexcept {
+        live--;
+    }
+
+    [[nodiscard]] bool operator<(const Counted_Ordered& other) const noexcept {
+        return key < other.key;
+    }
+};
+
 i32 main() {
     Test test{"empty"_v};
     Trace("Array") {
@@ -301,6 +326,16 @@ i32 main() {
         for(i32 i = 0; i < 10; i++) {
             vf.push([]() { info("Hello"); });
         }
+
+        {
+            assert(Counted::live == 0);
+            Queue<Counted> counted;
+            for(i32 i = 0; i < 32; i++) {
+                counted.emplace();
+            }
+            assert(Counted::live == 32);
+        }
+        assert(Counted::live == 0);
     }
     Trace("Heap") {
         auto deduct = Heap{1, 2, 3};
@@ -377,6 +412,16 @@ i32 main() {
         for(i32 i = 0; i < 10; i++) {
             vf.push({[]() { info("Hello"); }});
         }
+
+        {
+            assert(Counted_Ordered::live == 0);
+            Heap<Counted_Ordered> counted;
+            for(i32 i = 0; i < 32; i++) {
+                counted.emplace(i);
+            }
+            assert(Counted_Ordered::live == 32);
+        }
+        assert(Counted_Ordered::live == 0);
     }
     return 0;
 }

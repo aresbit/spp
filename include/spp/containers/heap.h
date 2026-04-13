@@ -102,6 +102,11 @@ struct Heap {
             for(u64 i = 0; i < length_; i++) {
                 new(&new_data[i]) T{spp::move(data_[i])};
             }
+            if constexpr(Must_Destruct<T>) {
+                for(u64 i = 0; i < length_; i++) {
+                    data_[i].~T();
+                }
+            }
         }
         A::free(data_);
 

@@ -127,6 +127,11 @@ struct Queue {
                     new(&new_data[first + i]) T{spp::move(data_[i])};
                 }
             }
+            if constexpr(Must_Destruct<T>) {
+                for(u64 i = 0; i < length_; i++) {
+                    data_[idx_at(i)].~T();
+                }
+            }
         }
 
         A::free(data_);
