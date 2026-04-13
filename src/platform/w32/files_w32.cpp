@@ -6,23 +6,24 @@
 
 namespace spp::Files {
 
-[[nodiscard]] Opt<File_Time> last_write_time(String_View path) noexcept {
+[[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path) noexcept {
 
     WIN32_FILE_ATTRIBUTE_DATA attrib = {};
 
     auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
     if(ucs2_path_len == 0) {
         warn("Failed to convert file path %!", path);
-        return {};
+        return File_Result<File_Time>::err("path_convert_failed"_v);
     }
 
     if(GetFileAttributesExW(ucs2_path, GetFileExInfoStandard, (LPVOID)&attrib) == 0) {
         warn("Failed to get file attributes %: %", path, Log::sys_error());
-        return {};
+        return File_Result<File_Time>::err("attrib_failed"_v);
     }
 
-    return Opt{(static_cast<u64>(attrib.ftLastWriteTime.dwHighDateTime) << 32) |
-               static_cast<u64>(attrib.ftLastWriteTime.dwLowDateTime)};
+    return File_Result<File_Time>::ok((static_cast<u64>(attrib.ftLastWriteTime.dwHighDateTime)
+                                       << 32) |
+                                      static_cast<u64>(attrib.ftLastWriteTime.dwLowDateTime));
 }
 
 [[nodiscard]] bool before(const File_Time& first, const File_Time& second) noexcept {
@@ -34,25 +35,26 @@ namespace spp::Files {
     return CompareFileTime(&f, &s) == -1;
 }
 
-[[nodiscard]] Opt<Vec<u8, Alloc>> read(String_View path) noexcept {
+[[nodiscard]] File_Result<Vec<u8, Alloc>> read_result(String_View path) noexcept {
 
     auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
     if(ucs2_path_len == 0) {
         warn("Failed to convert file path %!", path);
-        return {};
+        return File_Result<Vec<u8, Alloc>>::err("path_convert_failed"_v);
     }
 
     HANDLE handle = CreateFileW(ucs2_path, GENERIC_READ, FILE_SHARE_READ, null, OPEN_EXISTING,
                                 FILE_ATTRIBUTE_NORMAL, null);
     if(handle == INVALID_HANDLE_VALUE) {
         warn("Failed to create file %: %", path, Log::sys_error());
-        return {};
+        return File_Result<Vec<u8, Alloc>>::err("open_failed"_v);
     }
 
     LARGE_INTEGER full_size;
     if(GetFileSizeEx(handle, &full_size) == FALSE) {
         warn("Failed to size file %: %", path, Log::sys_error());
-        return {};
+        CloseHandle(handle);
+        return File_Result<Vec<u8, Alloc>>::err("size_failed"_v);
     }
 
     u64 size = static_cast<u64>(full_size.QuadPart);
@@ -64,27 +66,27 @@ namespace spp::Files {
     if(ReadFile(handle, data.data(), static_cast<u32>(size), null, null) == FALSE) {
         warn("Failed to read file %: %", path, Log::sys_error());
         CloseHandle(handle);
-        return {};
+        return File_Result<Vec<u8, Alloc>>::err("read_failed"_v);
     }
 
     CloseHandle(handle);
 
-    return Opt{spp::move(data)};
+    return File_Result<Vec<u8, Alloc>>::ok(spp::move(data));
 }
 
-[[nodiscard]] bool write(String_View path, Slice<const u8> data) noexcept {
+[[nodiscard]] File_Result<u64> write_result(String_View path, Slice<const u8> data) noexcept {
 
     auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
     if(ucs2_path_len == 0) {
         warn("Failed to convert file path %!", path);
-        return false;
+        return File_Result<u64>::err("path_convert_failed"_v);
     }
 
     HANDLE handle =
         CreateFileW(ucs2_path, GENERIC_WRITE, 0, null, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, null);
     if(handle == INVALID_HANDLE_VALUE) {
         warn("Failed to create file %: %", path, Log::sys_error());
-        return false;
+        return File_Result<u64>::err("create_failed"_v);
     }
 
     assert(data.length() <= SPP_UINT32_MAX);
@@ -92,11 +94,11 @@ namespace spp::Files {
     if(WriteFile(handle, data.data(), static_cast<u32>(data.length()), null, null) == FALSE) {
         warn("Failed to write file %: %", path, Log::sys_error());
         CloseHandle(handle);
-        return false;
+        return File_Result<u64>::err("write_failed"_v);
     }
 
     CloseHandle(handle);
-    return true;
+    return File_Result<u64>::ok(data.length());
 }
 
 } // namespace spp::Files

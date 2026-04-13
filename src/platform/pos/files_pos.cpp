@@ -7,7 +7,7 @@
 
 namespace spp::Files {
 
-[[nodiscard]] Opt<Vec<u8, Alloc>> read(String_View path_) noexcept {
+[[nodiscard]] File_Result<Vec<u8, Alloc>> read_result(String_View path_) noexcept {
 
     int fd = -1;
     Region(R) {
@@ -17,7 +17,7 @@ namespace spp::Files {
 
     if(fd == -1) {
         warn("Failed to open file %: %", path_, Log::sys_error());
-        return {};
+        return File_Result<Vec<u8, Alloc>>::err("open_failed"_v);
     }
 
     off_t full_size = lseek(fd, 0, SEEK_END);
@@ -30,45 +30,47 @@ namespace spp::Files {
 
     if(::read(fd, data.data(), full_size) == -1) {
         warn("Failed to read file %: %", path_, Log::sys_error());
-        return {};
+        close(fd);
+        return File_Result<Vec<u8, Alloc>>::err("read_failed"_v);
     }
 
     close(fd);
-    return Opt{spp::move(data)};
+    return File_Result<Vec<u8, Alloc>>::ok(spp::move(data));
 }
 
-[[nodiscard]] bool write(String_View path_, Slice<const u8> data) noexcept {
+[[nodiscard]] File_Result<u64> write_result(String_View path_, Slice<const u8> data) noexcept {
 
     int fd = -1;
     Region(R) {
         auto path = path_.terminate<Mregion<R>>();
-        fd = open(reinterpret_cast<const char*>(path.data()), O_RDONLY);
+        fd = open(reinterpret_cast<const char*>(path.data()), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     }
 
     if(fd == -1) {
         warn("Failed to create file %: %", path_, Log::sys_error());
-        return false;
+        return File_Result<u64>::err("create_failed"_v);
     }
 
     if(::write(fd, data.data(), data.length()) == -1) {
         warn("Failed to write file %: %", path_, Log::sys_error());
-        return false;
+        close(fd);
+        return File_Result<u64>::err("write_failed"_v);
     }
 
     close(fd);
-    return true;
+    return File_Result<u64>::ok(data.length());
 }
 
-[[nodiscard]] Opt<File_Time> last_write_time(String_View path_) noexcept {
+[[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path_) noexcept {
     Region(R) {
         auto path = path_.terminate<Mregion<R>>();
 
         struct stat info;
         if(stat(reinterpret_cast<const char*>(path.data()), &info)) {
             warn("Failed to stat file %: %", path_, Log::sys_error());
-            return {};
+            return File_Result<File_Time>::err("stat_failed"_v);
         }
-        return Opt{static_cast<File_Time>(info.st_mtime)};
+        return File_Result<File_Time>::ok(static_cast<File_Time>(info.st_mtime));
     }
 }
 

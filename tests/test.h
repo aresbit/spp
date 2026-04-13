@@ -20,22 +20,21 @@ struct Test {
 
         auto expect = name.append<Mdefault>(".expect"_v);
 
-        Opt<Vec<u8, Files::Alloc>> loaded{};
-        loaded = Files::read(expect.view());
+        auto loaded = Files::read_result(expect.view());
         if(!loaded.ok()) {
             auto parent = "../"_v.append<Mdefault>(expect.view());
-            loaded = Files::read(parent.view());
+            loaded = Files::read_result(parent.view());
         }
         if(!loaded.ok()) {
             auto grand_parent = "../../"_v.append<Mdefault>(expect.view());
-            loaded = Files::read(grand_parent.view());
+            loaded = Files::read_result(grand_parent.view());
         }
         if(!loaded.ok()) {
             auto corrected = name.append<Mdefault>(".corrected"_v);
-            static_cast<void>(Files::write(corrected.view(), result.slice()));
+            static_cast<void>(Files::write_result(corrected.view(), result.slice()));
             Libc::exit(1);
         }
-        expected = move(*loaded);
+        expected = move(loaded.unwrap());
 
         bool differs = false;
         if(result.length() != expected.length()) {
@@ -51,7 +50,7 @@ struct Test {
 
         if(differs) {
             auto corrected = name.append<Mdefault>(".corrected"_v);
-            static_cast<void>(Files::write(corrected.view(), result.slice()));
+            static_cast<void>(Files::write_result(corrected.view(), result.slice()));
             Libc::exit(1);
         }
     }

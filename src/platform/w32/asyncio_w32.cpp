@@ -8,12 +8,13 @@ namespace spp::Async {
 
 constexpr u64 SECTOR_SIZE = 4096;
 
-[[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path) noexcept {
+[[nodiscard]] Task<Result<Vec<u8, Files::Alloc>, String_View>> read_result(Pool<>& pool,
+                                                                            String_View path) noexcept {
 
     auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
     if(ucs2_path_len == 0) {
         warn("Failed to convert file path %!", path);
-        co_return {};
+        co_return Result<Vec<u8, Files::Alloc>, String_View>::err("path_convert_failed"_v);
     }
 
     HANDLE handle =
@@ -21,14 +22,14 @@ constexpr u64 SECTOR_SIZE = 4096;
                     FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED, null);
     if(handle == INVALID_HANDLE_VALUE) {
         warn("Failed to create file %: %", path, Log::sys_error());
-        co_return {};
+        co_return Result<Vec<u8, Files::Alloc>, String_View>::err("open_failed"_v);
     }
 
     LARGE_INTEGER full_size;
     if(GetFileSizeEx(handle, &full_size) == FALSE) {
         warn("Failed to size file %: %", path, Log::sys_error());
         CloseHandle(handle);
-        co_return {};
+        co_return Result<Vec<u8, Files::Alloc>, String_View>::err("size_failed"_v);
     }
 
     u64 size = static_cast<u64>(full_size.QuadPart);
@@ -43,7 +44,7 @@ constexpr u64 SECTOR_SIZE = 4096;
     if(!event) {
         warn("Failed to create event: %", Log::sys_error());
         CloseHandle(handle);
-        co_return {};
+        co_return Result<Vec<u8, Files::Alloc>, String_View>::err("event_failed"_v);
     }
 
     OVERLAPPED overlapped = {};
@@ -54,22 +55,23 @@ constexpr u64 SECTOR_SIZE = 4096;
         warn("Failed to initiate async read of file %: %", path, Log::sys_error());
         CloseHandle(event);
         CloseHandle(handle);
-        co_return {};
+        co_return Result<Vec<u8, Files::Alloc>, String_View>::err("read_failed"_v);
     }
 
     co_await pool.event(Event::of_sys(event));
 
     CloseHandle(handle);
     data.resize(size);
-    co_return Opt{spp::move(data)};
+    co_return Result<Vec<u8, Files::Alloc>, String_View>::ok(spp::move(data));
 }
 
-[[nodiscard]] Task<bool> write(Pool<>& pool, String_View path, Slice<u8> data) noexcept {
+[[nodiscard]] Task<Result<u64, String_View>> write_result(Pool<>& pool, String_View path,
+                                                          Slice<u8> data) noexcept {
 
     auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
     if(ucs2_path_len == 0) {
         warn("Failed to convert file path %!", path);
-        co_return false;
+        co_return Result<u64, String_View>::err("path_convert_failed"_v);
     }
 
     HANDLE handle =
@@ -77,14 +79,14 @@ constexpr u64 SECTOR_SIZE = 4096;
                     FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED, null);
     if(handle == INVALID_HANDLE_VALUE) {
         warn("Failed to create file %: %", path, Log::sys_error());
-        co_return false;
+        co_return Result<u64, String_View>::err("create_failed"_v);
     }
 
     HANDLE event = CreateEventEx(null, null, 0, EVENT_ALL_ACCESS);
     if(!event) {
         warn("Failed to create event: %", Log::sys_error());
         CloseHandle(handle);
-        co_return false;
+        co_return Result<u64, String_View>::err("event_failed"_v);
     }
 
     OVERLAPPED overlapped = {};
@@ -105,7 +107,7 @@ constexpr u64 SECTOR_SIZE = 4096;
         warn("Failed to initiate async write of file %: %", path, Log::sys_error());
         CloseHandle(event);
         CloseHandle(handle);
-        co_return false;
+        co_return Result<u64, String_View>::err("write_failed"_v);
     }
 
     co_await pool.event(Event::of_sys(event));
@@ -114,17 +116,28 @@ constexpr u64 SECTOR_SIZE = 4096;
        INVALID_SET_FILE_POINTER) {
         warn("Failed to set file pointer for file %: %", path, Log::sys_error());
         CloseHandle(handle);
-        co_return false;
+        co_return Result<u64, String_View>::err("seek_failed"_v);
     }
 
     if(SetEndOfFile(handle) == FALSE) {
         warn("Failed to set end of file for file %: %", path, Log::sys_error());
         CloseHandle(handle);
-        co_return false;
+        co_return Result<u64, String_View>::err("truncate_failed"_v);
     }
 
     CloseHandle(handle);
-    co_return true;
+    co_return Result<u64, String_View>::ok(size);
+}
+
+[[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path) noexcept {
+    auto result = co_await read_result(pool, path);
+    if(!result.ok()) co_return Opt<Vec<u8, Files::Alloc>>{};
+    co_return Opt{move(result.unwrap())};
+}
+
+[[nodiscard]] Task<bool> write(Pool<>& pool, String_View path, Slice<u8> data) noexcept {
+    auto result = co_await write_result(pool, path, data);
+    co_return result.ok();
 }
 
 [[nodiscard]] Task<void> wait(Pool<>& pool, u64 ms) noexcept {
