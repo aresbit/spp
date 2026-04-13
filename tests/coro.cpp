@@ -1,7 +1,7 @@
 
 #include "test.h"
 
-#include <spp/async.h>
+#include <spp/async/async.h>
 
 i32 main() {
     Test test{"coro"_v};

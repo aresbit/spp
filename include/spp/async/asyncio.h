@@ -1,9 +1,9 @@
 
 #pragma once
 
-#include "async.h"
-#include "files.h"
-#include "pool.h"
+#include <spp/async/async.h>
+#include <spp/io/files.h>
+#include <spp/async/pool.h>
 
 namespace spp::Async {
 

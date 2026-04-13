@@ -1,6 +1,6 @@
 
 #include "test.h"
-#include <spp/rc.h>
+#include <spp/core/rc.h>
 
 i32 main() {
     Test test{"empty"_v};

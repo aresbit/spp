@@ -1,8 +1,8 @@
 
 #pragma once
 
-#include "base.h"
-#include "function.h"
+#include <spp/core/base.h>
+#include <spp/functional/function.h>
 
 namespace spp {
 namespace Log {

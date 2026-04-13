@@ -1,5 +1,5 @@
 
-#include <spp/thread.h>
+#include <spp/concurrency/thread.h>
 
 #ifdef SPP_ARCH_X64
 #include <immintrin.h>

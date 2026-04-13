@@ -1,8 +1,8 @@
 
 #include "test.h"
 
-#include <spp/asyncio.h>
-#include <spp/pool.h>
+#include <spp/async/asyncio.h>
+#include <spp/async/pool.h>
 
 auto lots_of_jobs(Async::Pool<>& pool, u64 depth) -> Async::Task<u64> {
     if(depth == 0) {

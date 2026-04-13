@@ -125,56 +125,56 @@ void keep_alive() noexcept;
 
 #define SPP_BASE
 
-#include "std/initializer_list.h"
+#include <spp/std/initializer_list.h>
 
-#include "utility.h"
+#include <spp/core/utility.h>
 
-#include "limits.h"
+#include <spp/core/limits.h>
 
-#include "reflect.h"
+#include <spp/reflection/reflect.h>
 
-#include "hash.h"
+#include <spp/core/hash.h>
 
-#include "math.h"
+#include <spp/numeric/math.h>
 
-#include "ref0.h"
+#include <spp/core/ref0.h>
 
-#include "alloc0.h"
+#include <spp/core/alloc0.h>
 
-#include "string0.h"
+#include <spp/containers/string0.h>
 
-#include "thread0.h"
+#include <spp/concurrency/thread0.h>
 
-#include "log.h"
+#include <spp/reflection/log.h>
 
-#include "format.h"
+#include <spp/reflection/format.h>
 
-#include "ref1.h"
+#include <spp/core/ref1.h>
 
-#include "pair.h"
+#include <spp/core/pair.h>
 
-#include "storage.h"
+#include <spp/core/storage.h>
 
-#include "opt.h"
+#include <spp/core/opt.h>
 
-#include "slice.h"
+#include <spp/containers/slice.h>
 
-#include "array.h"
+#include <spp/containers/array.h>
 
-#include "vec.h"
+#include <spp/containers/vec.h>
 
-#include "queue.h"
+#include <spp/containers/queue.h>
 
-#include "map.h"
+#include <spp/containers/map.h>
 
-#include "string1.h"
+#include <spp/containers/string1.h>
 
-#include "function.h"
+#include <spp/functional/function.h>
 
-#include "profile.h"
+#include <spp/reflection/profile.h>
 
-#include "alloc1.h"
+#include <spp/core/alloc1.h>
 
-#include "box.h"
+#include <spp/core/box.h>
 
-#include "format1.h"
+#include <spp/reflection/format1.h>

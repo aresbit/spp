@@ -1,13 +1,13 @@
 
 #include "test.h"
 
-#include <spp/function.h>
-#include <spp/heap.h>
-#include <spp/rc.h>
-#include <spp/stack.h>
-#include <spp/tuple.h>
-#include <spp/variant.h>
-#include <spp/vmath.h>
+#include <spp/functional/function.h>
+#include <spp/containers/heap.h>
+#include <spp/core/rc.h>
+#include <spp/containers/stack.h>
+#include <spp/core/tuple.h>
+#include <spp/core/variant.h>
+#include <spp/numeric/vmath.h>
 
 struct Ints {
     i32 i;

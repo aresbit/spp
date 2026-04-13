@@ -1,5 +1,5 @@
 
-#include <spp/thread.h>
+#include <spp/concurrency/thread.h>
 
 #include <windows.h>
 

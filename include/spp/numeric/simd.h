@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "base.h"
+#include <spp/core/base.h>
 
 // The implementation of these functions are compiled with SSE on MSVC x86-64 and gcc/clang vector
 // intrinsics on everything else.

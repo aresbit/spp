@@ -1,8 +1,8 @@
 
 #pragma once
 
-#include "base.h"
-#include "rc.h"
+#include <spp/core/base.h>
+#include <spp/core/rc.h>
 
 namespace spp {
 namespace Thread {

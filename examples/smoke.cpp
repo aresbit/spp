@@ -1,4 +1,4 @@
-#include <spp/base.h>
+#include <spp/core/base.h>
 
 int main() {
     const char* text = "spp";

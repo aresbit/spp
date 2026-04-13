@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "base.h"
+#include <spp/core/base.h>
 
 #if defined SPP_OS_LINUX || defined SPP_OS_MACOS 
 #include <netinet/in.h>

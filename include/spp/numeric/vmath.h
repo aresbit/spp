@@ -1,8 +1,8 @@
 
 #pragma once
 
-#include "base.h"
-#include "simd.h"
+#include <spp/core/base.h>
+#include <spp/numeric/simd.h>
 
 #ifdef SPP_COMPILER_CLANG
 #pragma clang diagnostic push

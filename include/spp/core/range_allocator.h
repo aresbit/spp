@@ -1,8 +1,8 @@
 
 #pragma once
 
-#include "base.h"
-#include "rng.h"
+#include <spp/core/base.h>
+#include <spp/core/rng.h>
 
 namespace spp {
 

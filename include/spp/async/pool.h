@@ -1,9 +1,9 @@
 
 #pragma once
 
-#include "async.h"
-#include "base.h"
-#include "thread.h"
+#include <spp/async/async.h>
+#include <spp/core/base.h>
+#include <spp/concurrency/thread.h>
 
 namespace spp::Async {
 

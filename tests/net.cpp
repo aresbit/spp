@@ -1,7 +1,7 @@
 
 #include "test.h"
 
-#include <spp/net.h>
+#include <spp/io/net.h>
 
 i32 main() {
     Test test{"net"_v};

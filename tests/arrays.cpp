@@ -1,8 +1,8 @@
 
 #include "test.h"
 
-#include <spp/heap.h>
-#include <spp/stack.h>
+#include <spp/containers/heap.h>
+#include <spp/containers/stack.h>
 
 struct X {
     X(i32 i) : i{i} {

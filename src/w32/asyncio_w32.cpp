@@ -1,7 +1,7 @@
 
-#include <spp/asyncio.h>
+#include <spp/async/asyncio.h>
 
-#include <spp/w32_util.h>
+#include <spp/platform/w32_util.h>
 #include <windows.h>
 
 namespace spp::Async {

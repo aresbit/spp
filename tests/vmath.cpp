@@ -1,6 +1,6 @@
 
 #include "test.h"
-#include <spp/vmath.h>
+#include <spp/numeric/vmath.h>
 
 using namespace spp::Math;
 

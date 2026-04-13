@@ -1,7 +1,7 @@
 
 #include "test.h"
 
-#include <spp/function.h>
+#include <spp/functional/function.h>
 
 i32 main() {
     Test test{"function"_v};

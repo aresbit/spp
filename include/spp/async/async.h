@@ -2,10 +2,10 @@
 #pragma once
 
 #define SPP_ASYNC
-#include "std/coroutine.h"
+#include <spp/std/coroutine.h>
 
-#include "base.h"
-#include "thread.h"
+#include <spp/core/base.h>
+#include <spp/concurrency/thread.h>
 
 namespace spp::Async {
 

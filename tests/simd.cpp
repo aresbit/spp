@@ -1,7 +1,7 @@
 
 #include "test.h"
-#include <spp/math.h>
-#include <spp/simd.h>
+#include <spp/numeric/math.h>
+#include <spp/numeric/simd.h>
 
 #define assert_near(a, b) assert(spp::Math::abs((a) - (b)) < 0.001f)
 

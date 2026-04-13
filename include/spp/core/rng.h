@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "base.h"
+#include <spp/core/base.h>
 
 namespace spp::RNG {
 
