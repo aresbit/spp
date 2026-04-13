@@ -56,6 +56,38 @@ struct Concurrent_Map {
         }
     }
 
+    template<typename F>
+    [[nodiscard]] auto read(F&& f) const noexcept -> Invoke_Result<F, const Map<K, V, A>&> {
+        Thread::Lock lock{mutex_};
+        if constexpr(Same<Invoke_Result<F, const Map<K, V, A>&>, void>) {
+            spp::forward<F>(f)(map_);
+            return;
+        } else {
+            return spp::forward<F>(f)(map_);
+        }
+    }
+
+    template<typename F>
+    [[nodiscard]] auto write(F&& f) noexcept -> Invoke_Result<F, Map<K, V, A>&> {
+        Thread::Lock lock{mutex_};
+        if constexpr(Same<Invoke_Result<F, Map<K, V, A>&>, void>) {
+            spp::forward<F>(f)(map_);
+            return;
+        } else {
+            return spp::forward<F>(f)(map_);
+        }
+    }
+
+    template<typename F>
+    [[nodiscard]] auto with_lock(F&& f) noexcept -> Invoke_Result<F, Map<K, V, A>&> {
+        return write(spp::forward<F>(f));
+    }
+
+    template<typename F>
+    [[nodiscard]] auto with_lock(F&& f) const noexcept -> Invoke_Result<F, const Map<K, V, A>&> {
+        return read(spp::forward<F>(f));
+    }
+
 private:
     mutable Thread::Mutex mutex_;
     Map<K, V, A> map_;
@@ -101,10 +133,41 @@ struct Concurrent_Vec {
         return Opt<T>{spp::move(out)};
     }
 
+    template<typename F>
+    [[nodiscard]] auto read(F&& f) const noexcept -> Invoke_Result<F, const Vec<T, A>&> {
+        Thread::Lock lock{mutex_};
+        if constexpr(Same<Invoke_Result<F, const Vec<T, A>&>, void>) {
+            spp::forward<F>(f)(vec_);
+            return;
+        } else {
+            return spp::forward<F>(f)(vec_);
+        }
+    }
+
+    template<typename F>
+    [[nodiscard]] auto write(F&& f) noexcept -> Invoke_Result<F, Vec<T, A>&> {
+        Thread::Lock lock{mutex_};
+        if constexpr(Same<Invoke_Result<F, Vec<T, A>&>, void>) {
+            spp::forward<F>(f)(vec_);
+            return;
+        } else {
+            return spp::forward<F>(f)(vec_);
+        }
+    }
+
+    template<typename F>
+    [[nodiscard]] auto with_lock(F&& f) noexcept -> Invoke_Result<F, Vec<T, A>&> {
+        return write(spp::forward<F>(f));
+    }
+
+    template<typename F>
+    [[nodiscard]] auto with_lock(F&& f) const noexcept -> Invoke_Result<F, const Vec<T, A>&> {
+        return read(spp::forward<F>(f));
+    }
+
 private:
     mutable Thread::Mutex mutex_;
     Vec<T, A> vec_;
 };
 
 } // namespace spp::Concurrency
-
