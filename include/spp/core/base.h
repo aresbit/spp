@@ -182,3 +182,5 @@ void keep_alive() noexcept;
 #include <spp/reflection/format1.h>
 
 #include <spp/reflection/json.h>
+
+#include <spp/concurrency/concurrent.h>
