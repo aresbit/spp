@@ -48,12 +48,17 @@ Scope baseline: `docs/spp_design.md`
 - Status: in progress
 
 ### Phase 5: Ecosystem & Optimization
-- [ ] Serialization / reflection integration checkpoints
+- [x] Serialization / reflection integration checkpoints
 - [ ] Network and IO API consistency pass
 - [ ] Performance and memory optimization milestones
-- Status: pending
+- Status: in progress
 
 ## Completed Commits (Trace)
+- `e2f5836` feat: add json serialization support for option and result
+- `e513771` feat: add json parse_result for primitives and vectors
+- `b67e113` feat: add pretty json output for reflection serialization
+- `f97c104` feat: add json serialization for vec slice array and map
+- `b68d6ee` feat: add reflection-driven json serialization core
 - `c361b3f` feat: add cancellable async wait with cancel token
 - `83dffec` feat: add timed wait_any_for event API across backends
 - `e75acc4` feat: add async pool runtime stats counters
@@ -87,5 +92,5 @@ Scope baseline: `docs/spp_design.md`
 
 ## Immediate Next Step
 1. Complete concurrent container safety pass (Phase 4 remaining unchecked item).
-2. Start Phase 5 API consistency pass (serialization/reflection integration checkpoints).
+2. Continue Phase 5 network and IO API consistency pass.
 3. Continue one-feature-per-commit with `make test` gate.
