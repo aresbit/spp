@@ -1,5 +1,5 @@
 
-#include "../files.h"
+#include <spp/files.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>

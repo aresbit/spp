@@ -1,5 +1,5 @@
 
-#include "../simd.h"
+#include <spp/simd.h>
 
 #ifdef SPP_COMPILER_MSVC
 #include <immintrin.h>

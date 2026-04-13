@@ -1,5 +1,5 @@
 
-#include "../thread.h"
+#include <spp/thread.h>
 
 #include <windows.h>
 

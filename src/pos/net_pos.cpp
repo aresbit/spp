@@ -1,5 +1,5 @@
 
-#include "../net.h"
+#include <spp/net.h>
 
 #include <arpa/inet.h>
 #include <errno.h>

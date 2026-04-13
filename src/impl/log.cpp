@@ -1,13 +1,13 @@
 
-#include "../base.h"
-#include "../log_callback.h"
+#include <spp/base.h>
+#include <spp/log_callback.h>
 
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 
 #ifdef SPP_OS_WINDOWS
-#include "../w32/w32_util.h"
+#include <spp/w32_util.h>
 #include <windows.h>
 #endif
 

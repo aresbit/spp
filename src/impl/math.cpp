@@ -1,5 +1,5 @@
 
-#include "../base.h"
+#include <spp/base.h>
 
 #ifdef SPP_COMPILER_MSVC
 #include <intrin.h>

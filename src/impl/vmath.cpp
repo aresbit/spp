@@ -1,5 +1,5 @@
 
-#include "../vmath.h"
+#include <spp/vmath.h>
 
 #ifdef SPP_COMPILER_MSVC
 #include <smmintrin.h>

@@ -1,7 +1,7 @@
 
 #include "test.h"
 
-#include "rc.h"
+#include <spp/rc.h>
 
 i32 main() {
     Profile::begin_frame();

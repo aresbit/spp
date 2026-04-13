@@ -1,8 +1,8 @@
 
 #include "test.h"
 
-#include "base.h"
-#include "thread.h"
+#include <spp/base.h>
+#include <spp/thread.h>
 
 using Alloc = Mallocator<"Alloc">;
 

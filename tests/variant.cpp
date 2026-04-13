@@ -1,7 +1,7 @@
 
 #include "test.h"
 
-#include "variant.h"
+#include <spp/variant.h>
 
 struct InstCnt {
     InstCnt() {

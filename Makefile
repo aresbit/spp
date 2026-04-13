@@ -10,8 +10,8 @@ OBJ_DIR := $(BUILD_DIR)/obj
 LIB_DIR := $(BUILD_DIR)/lib
 BIN_DIR := $(BUILD_DIR)/bin
 
-INCLUDES :=
-APP_INCLUDES := -I.
+INCLUDES := -Iinclude
+APP_INCLUDES :=
 STD_FLAGS := -std=c++20
 WARN_FLAGS := -Wall -Wextra -Wpedantic
 SAFETY_FLAGS := -fno-exceptions -fno-rtti
@@ -26,13 +26,13 @@ endif
 CXXFLAGS := $(COMMON_FLAGS) $(OPT_FLAGS)
 LDFLAGS :=
 
-SRCS := impl/unify.cpp
+SRCS := src/impl/unify.cpp
 
 ifeq ($(OS),Windows_NT)
-  SRCS += w32/unify.cpp
+  SRCS += src/w32/unify.cpp
   PLATFORM_LIBS := -lws2_32 -lSynchronization
 else
-  SRCS += pos/unify.cpp
+  SRCS += src/pos/unify.cpp
   PLATFORM_LIBS := -lpthread
 endif
 

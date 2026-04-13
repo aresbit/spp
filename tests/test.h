@@ -1,7 +1,7 @@
 
-#include "base.h"
-#include "files.h"
-#include "log_callback.h"
+#include <spp/base.h>
+#include <spp/files.h>
+#include <spp/log_callback.h>
 
 using namespace spp;
 

@@ -1,4 +1,4 @@
-#include "base.h"
+#include <spp/base.h>
 
 int main() {
     const char* text = "spp";

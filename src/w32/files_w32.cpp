@@ -1,7 +1,7 @@
 
-#include "../files.h"
+#include <spp/files.h>
 
-#include "w32_util.h"
+#include <spp/w32_util.h>
 #include <windows.h>
 
 namespace spp::Files {

@@ -1,7 +1,7 @@
 
 #include "test.h"
 
-#include "thread.h"
+#include <spp/thread.h>
 
 i32 main() {
     Test test{"thread"_v};

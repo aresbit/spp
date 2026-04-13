@@ -1,7 +1,7 @@
 
 #include "test.h"
 
-#include "tuple.h"
+#include <spp/tuple.h>
 
 i32 main() {
     Test test{"empty"_v};

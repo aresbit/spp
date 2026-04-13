@@ -1,5 +1,5 @@
 
-#include "../base.h"
+#include <spp/base.h>
 
 #include <stdio.h>
 #include <stdlib.h>

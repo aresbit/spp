@@ -1,5 +1,5 @@
 
-#include "../net.h"
+#include <spp/net.h>
 
 #include <windows.h>
 #include <winsock2.h>
