@@ -2,24 +2,26 @@
   "skill_name": "autoresearch-spp-systemlib",
   "status": "complete",
   "current_experiment": 5,
-  "baseline_score": 100.0,
+  "baseline_score": 60.0,
   "best_score": 100.0,
   "experiments": [
-    {"id": 0, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "baseline", "description": "baseline: before phase5 serialization/reflection integration"},
-    {"id": 1, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: reflection-driven json serialization core"},
-    {"id": 2, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: json serialization for vec/slice/array/map"},
-    {"id": 3, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: pretty json output path"},
-    {"id": 4, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: json parse_result for primitives/vectors"},
-    {"id": 5, "score": 8, "max_score": 8, "pass_rate": 100.0, "status": "keep", "description": "feat: option/result json integration"}
+    {"id": 0, "score": 6, "max_score": 10, "pass_rate": 60.0, "status": "baseline", "description": "baseline: updated task_plan before feature-coverage mutations"},
+    {"id": 1, "score": 7, "max_score": 10, "pass_rate": 70.0, "status": "keep", "description": "add explicit plan eval rubric and status consistency cleanup"},
+    {"id": 2, "score": 8, "max_score": 10, "pass_rate": 80.0, "status": "keep", "description": "add requirement-to-feature coverage matrix against design doc"},
+    {"id": 3, "score": 9, "max_score": 10, "pass_rate": 90.0, "status": "keep", "description": "introduce binary acceptance + verification gates per planned feat"},
+    {"id": 4, "score": 9, "max_score": 10, "pass_rate": 90.0, "status": "discard", "description": "overly verbose commit trace expansion without extra coverage gain"},
+    {"id": 5, "score": 10, "max_score": 10, "pass_rate": 100.0, "status": "keep", "description": "prioritized 5-feature backlog with executable next-commit sequence"}
   ],
   "eval_breakdown": [
-    {"name": "feature_commit_made", "pass_count": 5, "total": 5},
-    {"name": "build_pass", "pass_count": 5, "total": 5},
-    {"name": "make_test_pass", "pass_count": 5, "total": 5},
-    {"name": "task_plan_aligned", "pass_count": 5, "total": 5},
-    {"name": "phase5_serialization_scope", "pass_count": 5, "total": 5},
-    {"name": "reflection_integration", "pass_count": 5, "total": 5},
-    {"name": "result_option_alignment", "pass_count": 5, "total": 5},
-    {"name": "test_coverage_added", "pass_count": 5, "total": 5}
+    {"name": "requirement_traceability", "pass_count": 5, "total": 6},
+    {"name": "feat_granularity", "pass_count": 6, "total": 6},
+    {"name": "test_gate_defined", "pass_count": 5, "total": 6},
+    {"name": "acceptance_binary", "pass_count": 4, "total": 6},
+    {"name": "priority_ordered", "pass_count": 4, "total": 6},
+    {"name": "platform_parity_visible", "pass_count": 5, "total": 6},
+    {"name": "history_clean", "pass_count": 4, "total": 6},
+    {"name": "next_step_actionable", "pass_count": 6, "total": 6},
+    {"name": "phase_status_consistent", "pass_count": 5, "total": 6},
+    {"name": "design_alignment_complete", "pass_count": 4, "total": 6}
   ]
 }

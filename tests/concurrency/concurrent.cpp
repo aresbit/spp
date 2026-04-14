@@ -33,13 +33,17 @@ i32 main() {
 
     Trace("Concurrent map composite ops") {
         Concurrency::Concurrent_Map<i32, i32> cmap;
-        assert(cmap.get_or_insert_with(1, [] { return 5; }) == 5);
-        assert(cmap.get_or_insert_with(1, [] { return 99; }) == 5);
+        assert(cmap.get_or_insert_with(1, [] { return 5; }));
+        assert(!cmap.get_or_insert_with(1, [] { return 99; }));
+        auto value1 = cmap.try_get_copy(1);
+        assert(value1.ok() && *value1 == 5);
 
-        auto& v = cmap.upsert(1, [] { return 10; }, [](i32& x) { x += 3; });
-        assert(v == 8);
-        auto& v2 = cmap.upsert(2, [] { return 7; }, [](i32& x) { x += 10; });
-        assert(v2 == 7);
+        assert(!cmap.upsert(1, [] { return 10; }, [](i32& x) { x += 3; }));
+        auto v = cmap.try_get_copy(1);
+        assert(v.ok() && *v == 8);
+        assert(cmap.upsert(2, [] { return 7; }, [](i32& x) { x += 10; }));
+        auto v2 = cmap.try_get_copy(2);
+        assert(v2.ok() && *v2 == 7);
 
         assert(cmap.update_if(2, [](i32& x) { x *= 2; }));
         auto got2 = cmap.try_get_copy(2);
@@ -48,6 +52,26 @@ i32 main() {
         assert(!cmap.erase_if(2, [](const i32& x) { return x < 10; }));
         assert(cmap.erase_if(2, [](const i32& x) { return x == 14; }));
         assert(!cmap.contains(2));
+    }
+
+    Trace("Concurrent map upsert contention") {
+        Concurrency::Concurrent_Map<i32, i32> cmap;
+        constexpr i32 threads = 8;
+        constexpr i32 iters = 3000;
+
+        Vec<Thread::Future<void>> tasks;
+        for(i32 t = 0; t < threads; t++) {
+            tasks.push(Thread::spawn([&cmap]() mutable {
+                for(i32 i = 0; i < iters; i++) {
+                    (void)cmap.upsert(7, [] { return 1; }, [](i32& x) { x += 1; });
+                }
+            }));
+        }
+        for(auto& task : tasks) task->block();
+
+        auto got = cmap.try_get_copy(7);
+        assert(got.ok());
+        assert(*got == threads * iters);
     }
 
     Trace("Concurrent map snapshot and drain") {

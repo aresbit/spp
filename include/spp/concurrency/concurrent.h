@@ -25,16 +25,20 @@ struct Concurrent_Map {
         return map_.contains(key);
     }
 
-    V& insert(K&& key, V&& value) noexcept {
+    // Never return references to internal storage from concurrent containers.
+    // References would outlive the lock scope and can become invalid after unlock.
+    [[nodiscard]] bool insert(K&& key, V&& value) noexcept {
         Thread::Lock lock{mutex_};
-        return map_.insert(spp::move(key), spp::move(value));
+        map_.insert(spp::move(key), spp::move(value));
+        return true;
     }
 
-    V& insert(const K& key, const V& value) noexcept
+    [[nodiscard]] bool insert(const K& key, const V& value) noexcept
         requires Copy_Constructable<K> && Copy_Constructable<V>
     {
         Thread::Lock lock{mutex_};
-        return map_.insert(key, value);
+        map_.insert(key, value);
+        return true;
     }
 
     [[nodiscard]] bool erase(const K& key) noexcept {
@@ -43,27 +47,29 @@ struct Concurrent_Map {
     }
 
     template<typename F>
-    V& get_or_insert_with(const K& key, F&& make_value) noexcept
+    [[nodiscard]] bool get_or_insert_with(const K& key, F&& make_value) noexcept
         requires Copy_Constructable<K> && Invocable<F> && Constructable<V, Invoke_Result<F>>
     {
         Thread::Lock lock{mutex_};
         auto found = map_.try_get(key);
-        if(found.ok()) return **found;
-        return map_.insert(K{key}, V{spp::forward<F>(make_value)()});
+        if(found.ok()) return false;
+        map_.insert(K{key}, V{spp::forward<F>(make_value)()});
+        return true;
     }
 
     template<typename F>
-    V& get_or_insert_with(K&& key, F&& make_value) noexcept
+    [[nodiscard]] bool get_or_insert_with(K&& key, F&& make_value) noexcept
         requires Invocable<F> && Constructable<V, Invoke_Result<F>>
     {
         Thread::Lock lock{mutex_};
         auto found = map_.try_get(key);
-        if(found.ok()) return **found;
-        return map_.insert(spp::move(key), V{spp::forward<F>(make_value)()});
+        if(found.ok()) return false;
+        map_.insert(spp::move(key), V{spp::forward<F>(make_value)()});
+        return true;
     }
 
     template<typename FI, typename FU>
-    V& upsert(const K& key, FI&& on_insert, FU&& on_update) noexcept
+    [[nodiscard]] bool upsert(const K& key, FI&& on_insert, FU&& on_update) noexcept
         requires Copy_Constructable<K> && Invocable<FI> && Constructable<V, Invoke_Result<FI>> &&
                  Invocable<FU, V&>
     {
@@ -71,22 +77,24 @@ struct Concurrent_Map {
         auto found = map_.try_get(key);
         if(found.ok()) {
             spp::forward<FU>(on_update)(**found);
-            return **found;
+            return false;
         }
-        return map_.insert(K{key}, V{spp::forward<FI>(on_insert)()});
+        map_.insert(K{key}, V{spp::forward<FI>(on_insert)()});
+        return true;
     }
 
     template<typename FI, typename FU>
-    V& upsert(K&& key, FI&& on_insert, FU&& on_update) noexcept
+    [[nodiscard]] bool upsert(K&& key, FI&& on_insert, FU&& on_update) noexcept
         requires Invocable<FI> && Constructable<V, Invoke_Result<FI>> && Invocable<FU, V&>
     {
         Thread::Lock lock{mutex_};
         auto found = map_.try_get(key);
         if(found.ok()) {
             spp::forward<FU>(on_update)(**found);
-            return **found;
+            return false;
         }
-        return map_.insert(spp::move(key), V{spp::forward<FI>(on_insert)()});
+        map_.insert(spp::move(key), V{spp::forward<FI>(on_insert)()});
+        return true;
     }
 
     template<typename F>
@@ -202,18 +210,18 @@ struct Concurrent_Vec {
         vec_.clear();
     }
 
-    T& push(T&& value) noexcept
+    void push(T&& value) noexcept
         requires Move_Constructable<T>
     {
         Thread::Lock lock{mutex_};
-        return vec_.push(spp::move(value));
+        vec_.push(spp::move(value));
     }
 
-    T& push(const T& value) noexcept
+    void push(const T& value) noexcept
         requires Copy_Constructable<T>
     {
         Thread::Lock lock{mutex_};
-        return vec_.push(value);
+        vec_.push(value);
     }
 
     [[nodiscard]] Opt<T> try_pop() noexcept

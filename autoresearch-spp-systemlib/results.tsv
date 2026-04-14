@@ -1,7 +1,7 @@
 experiment	score	max_score	pass_rate	status	description
-0	8	8	100.0%	baseline	baseline: before phase5 serialization/reflection integration
-1	8	8	100.0%	keep	feat: reflection-driven json serialization core
-2	8	8	100.0%	keep	feat: json serialization for vec/slice/array/map
-3	8	8	100.0%	keep	feat: pretty json output path
-4	8	8	100.0%	keep	feat: json parse_result for primitives/vectors
-5	8	8	100.0%	keep	feat: option/result json integration
+0	6	10	60.0%	baseline	baseline: updated task_plan before feature-coverage mutations
+1	7	10	70.0%	keep	add explicit plan eval rubric and status consistency cleanup
+2	8	10	80.0%	keep	add requirement-to-feature coverage matrix against design doc
+3	9	10	90.0%	keep	introduce binary acceptance + verification gates per planned feat
+4	9	10	90.0%	discard	overly verbose commit trace expansion without extra coverage gain
+5	10	10	100.0%	keep	prioritized 5-feature backlog with executable next-commit sequence
