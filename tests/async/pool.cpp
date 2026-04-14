@@ -152,6 +152,11 @@ i32 main() {
             job().block();
         }
         {
+            auto waited = Async::wait_typed(pool, 10).block();
+            assert(waited.ok());
+            assert(waited.unwrap() == 10);
+        }
+        {
             Async::Cancel_Token token;
             token.cancel();
             auto job = [&pool_ = pool, &token_ = token]() -> Async::Task<void> {
@@ -163,6 +168,13 @@ i32 main() {
                 co_return;
             };
             job().block();
+        }
+        {
+            Async::Cancel_Token token;
+            token.cancel();
+            auto waited = Async::wait_typed(pool, 10, token).block();
+            assert(!waited.ok());
+            assert(waited.unwrap_err() == Async::Wait_Error::cancelled);
         }
         {
             Async::Cancel_Token token;

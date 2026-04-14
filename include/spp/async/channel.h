@@ -7,8 +7,8 @@
 namespace spp::Async {
 
 [[nodiscard]] inline Concurrency::Channel_Error
-map_wait_error_to_channel(String_View err) noexcept {
-    if(err == "cancelled"_v) return Concurrency::Channel_Error::cancelled;
+map_wait_error_to_channel(Wait_Error err) noexcept {
+    if(err == Wait_Error::cancelled) return Concurrency::Channel_Error::cancelled;
     return Concurrency::Channel_Error::timeout;
 }
 
@@ -82,7 +82,7 @@ template<Move_Constructable T, Scalar_Allocator A = Thread::Alloc, Allocator P =
 
         u64 remain_ms = timeout_ms - elapsed_ms;
         u64 step_ms = remain_ms > 1 ? 1 : remain_ms;
-        auto waited = co_await wait_result(pool, step_ms, token);
+        auto waited = co_await wait_typed(pool, step_ms, token);
         if(!waited.ok()) {
             co_return Result<T, Concurrency::Channel_Error>::err(
                 map_wait_error_to_channel(waited.unwrap_err()));
@@ -129,7 +129,7 @@ template<Move_Constructable T, Scalar_Allocator A = Thread::Alloc, Allocator P =
 
         u64 remain_ms = timeout_ms - elapsed_ms;
         u64 step_ms = remain_ms > 1 ? 1 : remain_ms;
-        auto waited = co_await wait_result(pool, step_ms, token);
+        auto waited = co_await wait_typed(pool, step_ms, token);
         if(!waited.ok()) {
             co_return Result<u64, Concurrency::Channel_Error>::err(
                 map_wait_error_to_channel(waited.unwrap_err()));
