@@ -137,13 +137,14 @@ struct Io_Uring {
         return static_cast<int>(syscall(SYS_io_uring_enter, fd, 1, 0, 0, null, 0));
     }
 
-    [[nodiscard]] bool try_pop_cqe(i32& out_res) noexcept {
+    [[nodiscard]] bool try_pop_cqe(u64& out_user_data, i32& out_res) noexcept {
         u32 head = load_acquire(cq_head);
         u32 tail = load_acquire(cq_tail);
         if(head == tail) {
             return false;
         }
         io_uring_cqe* cqe = &cqes[head & *cq_ring_mask];
+        out_user_data = cqe->user_data;
         out_res = cqe->res;
         store_release(cq_head, head + 1);
         return true;
@@ -212,53 +213,70 @@ static void disable_io_uring_globally_now() noexcept {
 }
 
 struct Io_Uring_Cache {
+    Thread::Mutex mut;
     bool attempted = false;
     bool available = false;
     Io_Uring ring;
+    u64 next_user_data = 1;
+    Vec<Pair<u64, i32>, Files::Alloc> completions;
 };
 
-[[nodiscard]] static bool& worker_ring_in_flight() noexcept {
-    static thread_local bool in_flight = false;
-    return in_flight;
+[[nodiscard]] static Io_Uring_Cache& shared_ring_cache() noexcept {
+    static Io_Uring_Cache cache;
+    return cache;
 }
 
-[[nodiscard]] static Io_Uring* worker_ring() noexcept {
-    if(io_uring_globally_disabled_now()) return null;
-    static thread_local Io_Uring_Cache cache;
+[[nodiscard]] static bool ensure_ring_available(Io_Uring_Cache& cache) noexcept {
+    if(io_uring_globally_disabled_now()) return false;
     if(!cache.attempted) {
         cache.attempted = true;
         cache.available = cache.ring.init(256);
         if(!cache.available) {
             disable_io_uring_globally_now();
-            return null;
+            return false;
         }
     }
-    if(!cache.available || worker_ring_in_flight()) return null;
-    return &cache.ring;
+    return cache.available;
 }
 
-struct In_Flight_Guard {
-    In_Flight_Guard() noexcept : flag(worker_ring_in_flight()) {
-        flag = true;
-    }
-    ~In_Flight_Guard() noexcept {
-        flag = false;
-    }
-    bool& flag;
-};
-
-[[nodiscard]] static Task<Result<i32, String_View>> await_uring_cqe(Pool<>& pool,
-                                                                    Io_Uring& ring) noexcept {
+static void pump_completions_locked(Io_Uring_Cache& cache) noexcept {
+    u64 token = 0;
     i32 res = 0;
-    while(!ring.try_pop_cqe(res)) {
-        int wait_fd = dup(ring.event_fd);
-        if(wait_fd < 0) {
-            co_return Result<i32, String_View>::err("event_dup_failed"_v);
-        }
-        co_await pool.event(Async::Event::of_sys(wait_fd, EPOLLIN));
-        ring.drain_eventfd();
+    while(cache.ring.try_pop_cqe(token, res)) {
+        cache.completions.emplace(token, res);
     }
-    co_return Result<i32, String_View>::ok(spp::move(res));
+}
+
+[[nodiscard]] static bool take_completion_locked(Io_Uring_Cache& cache, u64 token,
+                                                 i32& out_res) noexcept {
+    for(u64 i = 0; i < cache.completions.length(); i++) {
+        if(cache.completions[i].first == token) {
+            out_res = cache.completions[i].second;
+            if(i + 1 < cache.completions.length()) {
+                cache.completions[i] = spp::move(cache.completions.back());
+            }
+            cache.completions.pop();
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] static Task<Result<i32, String_View>> await_uring_token(Pool<>& pool,
+                                                                      Io_Uring_Cache& cache,
+                                                                      u64 token) noexcept {
+    i32 res = 0;
+    for(;;) {
+        {
+            Thread::Lock lock(cache.mut);
+            cache.ring.drain_eventfd();
+            pump_completions_locked(cache);
+            if(take_completion_locked(cache, token, res)) {
+                co_return Result<i32, String_View>::ok(spp::move(res));
+            }
+        }
+        co_await pool.suspend();
+    }
 }
 
 [[nodiscard]] Task<Result<Vec<u8, Files::Alloc>, String_View>> read_result(Pool<>& pool,
@@ -323,13 +341,12 @@ struct In_Flight_Guard {
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    Io_Uring* ring = worker_ring();
-    if(!ring) {
+    Io_Uring_Cache& cache = shared_ring_cache();
+    if(!ensure_ring_available(cache)) {
         auto ret = Files::pread_result(path, offset, out);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
-    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
@@ -343,25 +360,34 @@ struct In_Flight_Guard {
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring->reserve_sqe();
-    if(!sqe) {
-        close(fd);
-        co_return Result<u64, String_View>::err("pread_failed"_v);
-    }
-    sqe->opcode = IORING_OP_READ;
-    sqe->fd = fd;
-    sqe->off = offset;
-    sqe->addr = reinterpret_cast<u64>(out.data());
-    sqe->len = static_cast<u32>(out.length());
+    u64 token = 0;
+    {
+        Thread::Lock lock(cache.mut);
+        auto* sqe = cache.ring.reserve_sqe();
+        if(!sqe) {
+            close(fd);
+            auto ret = Files::pread_result(path, offset, out);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
+        token = cache.next_user_data++;
+        if(token == 0) token = cache.next_user_data++;
+        sqe->user_data = token;
+        sqe->opcode = IORING_OP_READ;
+        sqe->fd = fd;
+        sqe->off = offset;
+        sqe->addr = reinterpret_cast<u64>(out.data());
+        sqe->len = static_cast<u32>(out.length());
 
-    if(ring->submit() < 0) {
-        close(fd);
-        auto ret = Files::pread_result(path, offset, out);
-        if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
-        co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        if(cache.ring.submit() < 0) {
+            close(fd);
+            auto ret = Files::pread_result(path, offset, out);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
     }
 
-    auto cqe = co_await await_uring_cqe(pool, *ring);
+    auto cqe = co_await await_uring_token(pool, cache, token);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("pread_failed"_v);
@@ -387,13 +413,12 @@ struct In_Flight_Guard {
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    Io_Uring* ring = worker_ring();
-    if(!ring) {
+    Io_Uring_Cache& cache = shared_ring_cache();
+    if(!ensure_ring_available(cache)) {
         auto ret = Files::pwrite_result(path, offset, data);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
-    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
@@ -407,25 +432,34 @@ struct In_Flight_Guard {
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring->reserve_sqe();
-    if(!sqe) {
-        close(fd);
-        co_return Result<u64, String_View>::err("pwrite_failed"_v);
-    }
-    sqe->opcode = IORING_OP_WRITE;
-    sqe->fd = fd;
-    sqe->off = offset;
-    sqe->addr = reinterpret_cast<u64>(data.data());
-    sqe->len = static_cast<u32>(data.length());
+    u64 token = 0;
+    {
+        Thread::Lock lock(cache.mut);
+        auto* sqe = cache.ring.reserve_sqe();
+        if(!sqe) {
+            close(fd);
+            auto ret = Files::pwrite_result(path, offset, data);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
+        token = cache.next_user_data++;
+        if(token == 0) token = cache.next_user_data++;
+        sqe->user_data = token;
+        sqe->opcode = IORING_OP_WRITE;
+        sqe->fd = fd;
+        sqe->off = offset;
+        sqe->addr = reinterpret_cast<u64>(data.data());
+        sqe->len = static_cast<u32>(data.length());
 
-    if(ring->submit() < 0) {
-        close(fd);
-        auto ret = Files::pwrite_result(path, offset, data);
-        if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
-        co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        if(cache.ring.submit() < 0) {
+            close(fd);
+            auto ret = Files::pwrite_result(path, offset, data);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
     }
 
-    auto cqe = co_await await_uring_cqe(pool, *ring);
+    auto cqe = co_await await_uring_token(pool, cache, token);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("pwrite_failed"_v);
@@ -467,13 +501,12 @@ struct In_Flight_Guard {
         iovs.push(v);
     }
 
-    Io_Uring* ring = worker_ring();
-    if(!ring) {
+    Io_Uring_Cache& cache = shared_ring_cache();
+    if(!ensure_ring_available(cache)) {
         auto ret = Files::preadv_result(path, offset, outs);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
-    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
@@ -487,25 +520,34 @@ struct In_Flight_Guard {
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring->reserve_sqe();
-    if(!sqe) {
-        close(fd);
-        co_return Result<u64, String_View>::err("preadv_failed"_v);
-    }
-    sqe->opcode = IORING_OP_READV;
-    sqe->fd = fd;
-    sqe->off = offset;
-    sqe->addr = reinterpret_cast<u64>(iovs.data());
-    sqe->len = static_cast<u32>(iovs.length());
+    u64 token = 0;
+    {
+        Thread::Lock lock(cache.mut);
+        auto* sqe = cache.ring.reserve_sqe();
+        if(!sqe) {
+            close(fd);
+            auto ret = Files::preadv_result(path, offset, outs);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
+        token = cache.next_user_data++;
+        if(token == 0) token = cache.next_user_data++;
+        sqe->user_data = token;
+        sqe->opcode = IORING_OP_READV;
+        sqe->fd = fd;
+        sqe->off = offset;
+        sqe->addr = reinterpret_cast<u64>(iovs.data());
+        sqe->len = static_cast<u32>(iovs.length());
 
-    if(ring->submit() < 0) {
-        close(fd);
-        auto ret = Files::preadv_result(path, offset, outs);
-        if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
-        co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        if(cache.ring.submit() < 0) {
+            close(fd);
+            auto ret = Files::preadv_result(path, offset, outs);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
     }
 
-    auto cqe = co_await await_uring_cqe(pool, *ring);
+    auto cqe = co_await await_uring_token(pool, cache, token);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("preadv_failed"_v);
@@ -546,13 +588,12 @@ struct In_Flight_Guard {
         iovs.push(v);
     }
 
-    Io_Uring* ring = worker_ring();
-    if(!ring) {
+    Io_Uring_Cache& cache = shared_ring_cache();
+    if(!ensure_ring_available(cache)) {
         auto ret = Files::pwritev_result(path, offset, inputs);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
-    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
@@ -566,25 +607,34 @@ struct In_Flight_Guard {
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring->reserve_sqe();
-    if(!sqe) {
-        close(fd);
-        co_return Result<u64, String_View>::err("pwritev_failed"_v);
-    }
-    sqe->opcode = IORING_OP_WRITEV;
-    sqe->fd = fd;
-    sqe->off = offset;
-    sqe->addr = reinterpret_cast<u64>(iovs.data());
-    sqe->len = static_cast<u32>(iovs.length());
+    u64 token = 0;
+    {
+        Thread::Lock lock(cache.mut);
+        auto* sqe = cache.ring.reserve_sqe();
+        if(!sqe) {
+            close(fd);
+            auto ret = Files::pwritev_result(path, offset, inputs);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
+        token = cache.next_user_data++;
+        if(token == 0) token = cache.next_user_data++;
+        sqe->user_data = token;
+        sqe->opcode = IORING_OP_WRITEV;
+        sqe->fd = fd;
+        sqe->off = offset;
+        sqe->addr = reinterpret_cast<u64>(iovs.data());
+        sqe->len = static_cast<u32>(iovs.length());
 
-    if(ring->submit() < 0) {
-        close(fd);
-        auto ret = Files::pwritev_result(path, offset, inputs);
-        if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
-        co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        if(cache.ring.submit() < 0) {
+            close(fd);
+            auto ret = Files::pwritev_result(path, offset, inputs);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
     }
 
-    auto cqe = co_await await_uring_cqe(pool, *ring);
+    auto cqe = co_await await_uring_token(pool, cache, token);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("pwritev_failed"_v);
@@ -605,13 +655,12 @@ struct In_Flight_Guard {
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    Io_Uring* ring = worker_ring();
-    if(!ring) {
+    Io_Uring_Cache& cache = shared_ring_cache();
+    if(!ensure_ring_available(cache)) {
         auto ret = Files::fdatasync_result(path);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
-    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
@@ -625,23 +674,32 @@ struct In_Flight_Guard {
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring->reserve_sqe();
-    if(!sqe) {
-        close(fd);
-        co_return Result<u64, String_View>::err("fdatasync_failed"_v);
-    }
-    sqe->opcode = IORING_OP_FSYNC;
-    sqe->fd = fd;
-    sqe->fsync_flags = IORING_FSYNC_DATASYNC;
+    u64 token = 0;
+    {
+        Thread::Lock lock(cache.mut);
+        auto* sqe = cache.ring.reserve_sqe();
+        if(!sqe) {
+            close(fd);
+            auto ret = Files::fdatasync_result(path);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
+        token = cache.next_user_data++;
+        if(token == 0) token = cache.next_user_data++;
+        sqe->user_data = token;
+        sqe->opcode = IORING_OP_FSYNC;
+        sqe->fd = fd;
+        sqe->fsync_flags = IORING_FSYNC_DATASYNC;
 
-    if(ring->submit() < 0) {
-        close(fd);
-        auto ret = Files::fdatasync_result(path);
-        if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
-        co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        if(cache.ring.submit() < 0) {
+            close(fd);
+            auto ret = Files::fdatasync_result(path);
+            if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
+            co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
+        }
     }
 
-    auto cqe = co_await await_uring_cqe(pool, *ring);
+    auto cqe = co_await await_uring_token(pool, cache, token);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("fdatasync_failed"_v);

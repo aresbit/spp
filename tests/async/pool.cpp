@@ -311,6 +311,52 @@ i32 main() {
             assert(!bad_write.ok());
             assert(bad_write.unwrap_err() == "direct_alignment"_v);
         }
+        {
+            String_View kPath = "async_pool_io_multiflight.tmp"_v;
+            auto existed = Files::exists_result(kPath);
+            assert(existed.ok());
+            if(existed.unwrap()) {
+                auto removed_existing = Files::remove_result(kPath);
+                assert(removed_existing.ok());
+            }
+
+            Array<u8, 48> init{};
+            auto seed = Async::write_result(pool, kPath, init.slice()).block();
+            assert(seed.ok());
+
+            constexpr u64 lanes = 8;
+            Vec<Async::Task<Result<u64, String_View>>> jobs;
+            jobs.reserve(lanes);
+            for(u64 i = 0; i < lanes; i++) {
+                jobs.push([&pool_ = pool, kPath, i]() -> Async::Task<Result<u64, String_View>> {
+                    Array<u8, 4> chunk{
+                        static_cast<u8>('A' + i),
+                        static_cast<u8>('a' + i),
+                        static_cast<u8>('0' + (i % 10)),
+                        static_cast<u8>('#'),
+                    };
+                    co_return co_await Async::pwrite_result(pool_, kPath, i * 4, chunk.slice());
+                }());
+            }
+
+            for(auto& job : jobs) {
+                auto w = job.block();
+                assert(w.ok() && w.unwrap() == 4);
+            }
+
+            auto all = Async::read_result(pool, kPath).block();
+            assert(all.ok());
+            auto got = spp::move(all.unwrap());
+            for(u64 i = 0; i < lanes; i++) {
+                assert(got[i * 4] == static_cast<u8>('A' + i));
+                assert(got[i * 4 + 1] == static_cast<u8>('a' + i));
+                assert(got[i * 4 + 2] == static_cast<u8>('0' + (i % 10)));
+                assert(got[i * 4 + 3] == static_cast<u8>('#'));
+            }
+
+            auto removed = Files::remove_result(kPath);
+            assert(removed.ok());
+        }
 #endif
         {
             Vec<Async::Event> events;

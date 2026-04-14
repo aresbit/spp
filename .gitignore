@@ -4,3 +4,4 @@ tests/debug.log
 tests/*.corrected
 tests/*/*.corrected
 bench/current.tsv
+.self*
