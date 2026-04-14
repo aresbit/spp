@@ -165,9 +165,75 @@ i32 main() {
             job().block();
         }
         {
+            Async::Cancel_Token token;
+            auto canceller = Thread::spawn([&token]() {
+                Thread::sleep(5);
+                token.cancel();
+            });
+
+            auto waited = Async::wait_result(pool, 100, token).block();
+            assert(!waited.ok());
+            assert(waited.unwrap_err() == "cancelled"_v);
+            canceller->block();
+        }
+        {
             auto stats = pool.stats();
             assert(stats.enqueued > 0);
             assert(stats.stolen <= stats.enqueued);
+        }
+        {
+            constexpr u64 lanes = 24;
+            constexpr u64 iterations = 200;
+
+            Vec<Async::Task<u64>> jobs;
+            jobs.reserve(lanes);
+
+            for(u64 lane = 0; lane < lanes; lane++) {
+                jobs.push([&pool_ = pool]() -> Async::Task<u64> {
+                    auto& pool = pool_;
+                    u64 progressed = 0;
+                    for(u64 i = 0; i < iterations; i++) {
+                        co_await pool.suspend();
+                        progressed++;
+                    }
+                    co_return progressed;
+                }());
+            }
+
+            u64 total_progress = 0;
+            for(auto& job : jobs) {
+                auto progressed = job.block();
+                assert(progressed == iterations);
+                total_progress += progressed;
+            }
+            assert(total_progress == lanes * iterations);
+        }
+        {
+            String_View kPath = "async_pool_io_roundtrip.tmp"_v;
+            auto existed = Files::exists_result(kPath);
+            assert(existed.ok());
+            if(existed.unwrap()) {
+                auto removed_existing = Files::remove_result(kPath);
+                assert(removed_existing.ok());
+            }
+
+            Vec<u8, Files::Alloc> payload;
+            for(u8 c : "bsd_read_write_result"_v) payload.push(c);
+
+            auto wrote = Async::write_result(pool, kPath, payload.slice()).block();
+            assert(wrote.ok());
+            assert(wrote.unwrap() == payload.length());
+
+            auto got = Async::read_result(pool, kPath).block();
+            assert(got.ok());
+            auto file_data = spp::move(got.unwrap());
+            assert(file_data.length() == payload.length());
+            for(u64 i = 0; i < payload.length(); i++) {
+                assert(file_data[i] == payload[i]);
+            }
+
+            auto removed = Files::remove_result(kPath);
+            assert(removed.ok());
         }
         {
             Vec<Async::Event> events;

@@ -1,12 +1,31 @@
 
 #include <spp/async/async.h>
 
+#include <errno.h>
+#include <poll.h>
 #include <sys/event.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
 namespace spp::Async {
+
+[[nodiscard]] static short to_poll_mask(i16 mask) noexcept {
+    if(mask == EVFILT_WRITE) return POLLOUT;
+    return POLLIN;
+}
+
+[[nodiscard]] static i32 wait_one_poll(i32 fd, i16 mask, i32 timeout_ms) noexcept {
+    pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = to_poll_mask(mask);
+
+    for(;;) {
+        int ret = poll(&pfd, 1, timeout_ms);
+        if(ret < 0 && errno == EINTR) continue;
+        return ret;
+    }
+}
 
 Event::Event() noexcept {
     int pipes[2];
@@ -62,29 +81,23 @@ void Event::reset() const noexcept {
 }
 
 [[nodiscard]] bool Event::try_wait() const noexcept {
-    int kq = kqueue();
-    if(kq == -1) {
-        die("Failed to create kqueue: %", Log::sys_error());
-    }
-
-    struct kevent wait;
-    EV_SET(&wait, fd, mask, EV_ADD | EV_ENABLE, 0, 0, null);
-    struct kevent signaled;
-    timespec timeout = {.tv_sec = 0, .tv_nsec = 0};
-    int count = kevent(kq, &wait, 1, &signaled, 1, &timeout);
-    close(kq);
-
+    int count = wait_one_poll(fd, mask, 0);
     if(count < 0) {
         die("Failed to poll kevent readiness: %", Log::sys_error());
     }
     if(count == 0) return false;
-    if(signaled.flags == EV_ERROR) {
-        die("Failed kevent readiness with error: %", Log::sys_error());
-    }
     return true;
 }
 
 [[nodiscard]] u64 Event::wait_any(Slice<Event> events) noexcept {
+    assert(!events.empty());
+    if(events.length() == 1) {
+        int ret = wait_one_poll(events[0].fd, events[0].mask, -1);
+        if(ret <= 0) {
+            die("Failed to wait on single event: %", Log::sys_error());
+        }
+        return 0;
+    }
 
     int kq = kqueue();
     if(kq == -1) {
@@ -96,20 +109,21 @@ void Event::reset() const noexcept {
         EV_SET(&change, e.fd, e.mask, EV_ADD | EV_ENABLE, 0, 0, null);
         int add_count = kevent(kq, &change, 1, null, 0, null);
         if(add_count < 0) {
+            close(kq);
             die("Failed to add kevent: %", Log::sys_error());
         }
     }
 
     struct kevent signaled;
-    int count = kevent(kq, null, 0, &signaled, 1, null);
+    int count = -1;
+    do {
+        count = kevent(kq, null, 0, &signaled, 1, null);
+    } while(count < 0 && errno == EINTR);
     if((count < 0) || (signaled.flags == EV_ERROR)) {
+        close(kq);
         die("Failed to wait on kevents: %", Log::sys_error());
     }
     close(kq);
-
-    if(count == 0) {
-        return wait_any(events);
-    }
 
     for(u64 i = 0; i < events.length(); ++i) {
         if(events[i].fd == static_cast<i32>(signaled.ident)) {
@@ -120,6 +134,15 @@ void Event::reset() const noexcept {
 }
 
 [[nodiscard]] Opt<u64> Event::wait_any_for(Slice<Event> events, u64 timeout_ms) noexcept {
+    assert(!events.empty());
+    if(events.length() == 1) {
+        int ret = wait_one_poll(events[0].fd, events[0].mask, static_cast<i32>(timeout_ms));
+        if(ret < 0) {
+            die("Failed to wait on single event: %", Log::sys_error());
+        }
+        if(ret == 0) return Opt<u64>{};
+        return Opt<u64>{0};
+    }
 
     int kq = kqueue();
     if(kq == -1) {
@@ -131,6 +154,7 @@ void Event::reset() const noexcept {
         EV_SET(&change, e.fd, e.mask, EV_ADD | EV_ENABLE, 0, 0, null);
         int add_count = kevent(kq, &change, 1, null, 0, null);
         if(add_count < 0) {
+            close(kq);
             die("Failed to add kevent: %", Log::sys_error());
         }
     }
@@ -140,8 +164,12 @@ void Event::reset() const noexcept {
     timeout.tv_nsec = static_cast<long>((timeout_ms % 1000) * 1000000);
 
     struct kevent signaled;
-    int count = kevent(kq, null, 0, &signaled, 1, &timeout);
+    int count = -1;
+    do {
+        count = kevent(kq, null, 0, &signaled, 1, &timeout);
+    } while(count < 0 && errno == EINTR);
     if(count < 0) {
+        close(kq);
         die("Failed to wait on kevents: %", Log::sys_error());
     }
     close(kq);

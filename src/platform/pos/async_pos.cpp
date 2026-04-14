@@ -1,11 +1,34 @@
 
 #include <spp/async/async.h>
 
+#include <errno.h>
+#include <poll.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
 
 namespace spp::Async {
+
+[[nodiscard]] static short to_poll_mask(i32 mask) noexcept {
+    short out = 0;
+    if(mask & EPOLLIN) out |= POLLIN;
+    if(mask & EPOLLOUT) out |= POLLOUT;
+    if(mask & EPOLLERR) out |= POLLERR;
+    if(mask & EPOLLHUP) out |= POLLHUP;
+    return out ? out : POLLIN;
+}
+
+[[nodiscard]] static i32 wait_one_poll(i32 fd, i32 mask, i32 timeout_ms) noexcept {
+    pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = to_poll_mask(mask);
+
+    for(;;) {
+        int ret = poll(&pfd, 1, timeout_ms);
+        if(ret < 0 && errno == EINTR) continue;
+        return ret;
+    }
+}
 
 Event::Event() noexcept {
     int event = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
@@ -62,31 +85,22 @@ void Event::reset() const noexcept {
 }
 
 [[nodiscard]] bool Event::try_wait() const noexcept {
-    int epfd = epoll_create1(EPOLL_CLOEXEC);
-    if(epfd == -1) {
-        die("Failed to create epoll: %", Log::sys_error());
-    }
-
-    epoll_event in = {};
-    in.events = mask;
-    in.data.fd = fd;
-    if(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &in) == -1) {
-        close(epfd);
-        die("Failed to add event to epoll: %", Log::sys_error());
-    }
-
-    epoll_event out = {};
-    int ret = epoll_wait(epfd, &out, 1, 0);
-    if(close(epfd) == -1) {
-        die("Failed to close epoll fd: %", Log::sys_error());
-    }
-    if(ret == -1) {
+    int ret = wait_one_poll(fd, mask, 0);
+    if(ret < 0) {
         die("Failed to poll event readiness: %", Log::sys_error());
     }
     return ret == 1;
 }
 
 [[nodiscard]] u64 Event::wait_any(Slice<Event> events) noexcept {
+    assert(!events.empty());
+    if(events.length() == 1) {
+        int ret = wait_one_poll(events[0].fd, events[0].mask, -1);
+        if(ret <= 0) {
+            die("Failed to wait on single event: %", Log::sys_error());
+        }
+        return 0;
+    }
 
     int epfd = epoll_create1(EPOLL_CLOEXEC);
     if(epfd == -1) {
@@ -99,14 +113,19 @@ void Event::reset() const noexcept {
         ev.data.fd = event.fd;
         int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, event.fd, &ev);
         if(ret == -1) {
+            close(epfd);
             die("Failed to add event to epoll: %", Log::sys_error());
         }
     }
 
     epoll_event ev;
-    int ret = epoll_wait(epfd, &ev, 1, -1);
+    int ret = -1;
+    do {
+        ret = epoll_wait(epfd, &ev, 1, -1);
+    } while(ret == -1 && errno == EINTR);
 
     if(ret == -1) {
+        close(epfd);
         die("Failed to wait on events: %", Log::sys_error());
     }
 
@@ -122,6 +141,15 @@ void Event::reset() const noexcept {
 }
 
 [[nodiscard]] Opt<u64> Event::wait_any_for(Slice<Event> events, u64 timeout_ms) noexcept {
+    assert(!events.empty());
+    if(events.length() == 1) {
+        int wait_ret = wait_one_poll(events[0].fd, events[0].mask, static_cast<int>(timeout_ms));
+        if(wait_ret < 0) {
+            die("Failed to wait on single event: %", Log::sys_error());
+        }
+        if(wait_ret == 0) return Opt<u64>{};
+        return Opt<u64>{0};
+    }
 
     int epfd = epoll_create1(EPOLL_CLOEXEC);
     if(epfd == -1) {
@@ -134,13 +162,18 @@ void Event::reset() const noexcept {
         ev.data.fd = event.fd;
         int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, event.fd, &ev);
         if(ret == -1) {
+            close(epfd);
             die("Failed to add event to epoll: %", Log::sys_error());
         }
     }
 
     epoll_event ev;
-    int wait_ret = epoll_wait(epfd, &ev, 1, static_cast<int>(timeout_ms));
+    int wait_ret = -1;
+    do {
+        wait_ret = epoll_wait(epfd, &ev, 1, static_cast<int>(timeout_ms));
+    } while(wait_ret == -1 && errno == EINTR);
     if(wait_ret == -1) {
+        close(epfd);
         die("Failed to wait on events: %", Log::sys_error());
     }
 
