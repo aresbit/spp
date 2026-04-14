@@ -11,6 +11,7 @@ enum class Channel_Error : u8 {
     full,
     empty,
     timeout,
+    cancelled,
 };
 
 template<Move_Constructable T, Scalar_Allocator A>

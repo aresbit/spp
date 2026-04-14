@@ -64,12 +64,33 @@ i32 main() {
         tx.close();
     }
 
+    Trace("Async recv_for cancelled") {
+        auto [tx, rx] = Concurrency::mpmc_channel<i32>(1);
+        Async::Cancel_Token token;
+        token.cancel();
+        auto got = Async::recv_for(pool, rx, 50, token).block();
+        assert(!got.ok());
+        assert(got.unwrap_err() == Concurrency::Channel_Error::cancelled);
+        tx.close();
+    }
+
     Trace("Async send_for timeout") {
         auto [tx, rx] = Concurrency::mpmc_channel<i32>(1);
         assert(tx.send(1).ok());
         auto sent = Async::send_for(pool, tx, 2, 5).block();
         assert(!sent.ok());
         assert(sent.unwrap_err() == Concurrency::Channel_Error::timeout);
+        rx.close();
+    }
+
+    Trace("Async send_for cancelled") {
+        auto [tx, rx] = Concurrency::mpmc_channel<i32>(1);
+        assert(tx.send(1).ok());
+        Async::Cancel_Token token;
+        token.cancel();
+        auto sent = Async::send_for(pool, tx, 2, 50, token).block();
+        assert(!sent.ok());
+        assert(sent.unwrap_err() == Concurrency::Channel_Error::cancelled);
         rx.close();
     }
 

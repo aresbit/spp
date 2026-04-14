@@ -1,12 +1,39 @@
 # SPP Task Plan (Execution-Strict)
 
-Last updated: 2026-04-13
+Last updated: 2026-04-14
 Scope baseline: `docs/spp_design.md`
 
 ## Execution Rules
 - One feature per commit.
 - Every step must be test-verified (`make test`) before commit.
 - All progress is recorded in this file before starting next step.
+- New feature work must include explicit acceptance criteria and targeted test mapping.
+
+## Plan Quality Evals (Autoresearch)
+- `eval_1_requirement_traceability`: Every active phase item maps to at least one design requirement.
+- `eval_2_feat_granularity`: Remaining work is split into feat-sized units with clear ownership scope.
+- `eval_3_test_gate`: Every planned feat has explicit test verification gate.
+- `eval_4_acceptance_binary`: Every planned feat has binary acceptance criteria.
+- `eval_5_priority_order`: Remaining work is ordered by P0/P1/P2 impact.
+- `eval_6_platform_parity`: Async/IO backlog calls out Linux/macOS/Windows parity.
+- `eval_7_commit_hygiene`: History section distinguishes done vs planned, no stale pending duplication.
+- `eval_8_next_step_actionable`: Immediate next steps can be executed without extra clarification.
+- `eval_9_phase_status_consistency`: Phase status lines match checklist completion.
+- `eval_10_design_alignment`: Functional and non-functional requirements are both represented.
+
+## Feature Requirement Coverage Matrix
+| Requirement | Design intent | Planned/Delivered feature coverage | Status |
+|---|---|---|---|
+| FR-1 Memory safety | Ownership + lifetime correctness | Phase 1 allocator/ownership hardening; Phase 4 concurrent safety pass | covered |
+| FR-2 Type safety | ADT + explicit result/option model | Phase 2 Result migration + Phase 3 pattern match alignment | covered |
+| FR-3 Functional style | composable APIs, immutable defaults | Phase 3 combinators and immutable behavior audit | covered |
+| FR-4 Zero-cost abstraction | no runtime tax for safety abstractions | Phase 5 perf/memory milestone pending benchmarking | partial |
+| FR-5 Allocator awareness | allocator-parametric containers | Phase 1 cross-allocator clone/lifecycle fixes | covered |
+| FR-6 Concurrency safety | safe runtime/channel behavior | Phase 4 async APIs + concurrent container safety pass | covered |
+| FR-7 Interoperability | C++ migration-friendly APIs | compatibility wrappers in Phase 2/4/5 | covered |
+| FR-8 Reflection/serialization | compile-time reflection + json path | Phase 5 serialization/reflection integration delivered | covered |
+| FR-9 Error handling | Result-first error path | Phase 2 + async/io `*_result` APIs | covered |
+| FR-10 Portability/testability | multi-platform + stable test gate | cross-backend async APIs + pending parity/consistency hardening | partial |
 
 ## Phase Progress
 
@@ -19,22 +46,22 @@ Scope baseline: `docs/spp_design.md`
 - [x] Queue/Heap/Map allocator cross-clone support
 - [x] Queue/Heap lifecycle fix after reserve/move
 - [x] Map slot lifecycle fix during rehash
-- Status: completed (for current baseline)
+- Status: completed
 
-### Phase 2: String/Result Migration (Current Focus)
+### Phase 2: String/Result Migration
 - [x] Introduce `Result<T, E>` core type
 - [x] Add `Files::*_result` APIs with compatibility wrappers
 - [x] Add `Async::*_result` APIs with compatibility wrappers
 - [x] Migrate test harness (`tests/test.h`) to Result-based file path
 - [x] Migrate string/parse path (`reflection/format1`) from `Opt` to `Result`
 - [x] Migrate network receive/error path to `Result`
-- Status: in progress
+- Status: completed
 
 ### Phase 3: Functional Layer Alignment
 - [x] Result combinators (`map`, `map_err`, `and_then`, `or_else`)
 - [x] Pattern matching alignment and API cleanup
 - [x] Immutable collection behavior audit vs design doc
-- Status: completed (for current baseline)
+- Status: completed
 
 ### Phase 4: Concurrency & Async Alignment
 - [x] Channel abstractions
@@ -44,14 +71,56 @@ Scope baseline: `docs/spp_design.md`
 - [x] Pool runtime stats API (`Pool::stats`)
 - [x] Timed event wait API (`Event::wait_any_for`)
 - [x] Cancellable wait API (`Cancel_Token` + `wait_result(..., token)`)
-- [ ] Concurrent container safety pass
-- Status: in progress
+- [x] Concurrent container safety pass
+- Status: completed
 
 ### Phase 5: Ecosystem & Optimization
 - [x] Serialization / reflection integration checkpoints
 - [ ] Network and IO API consistency pass
 - [ ] Performance and memory optimization milestones
 - Status: in progress
+
+## Remaining Feat Backlog (Autoresearch 5-Round Target)
+
+### FEAT-401 (P0) Concurrent Container Safety Pass
+- Scope: lock/atomic invariants, ownership handoff, iterator invalidation rules across concurrent containers.
+- Acceptance (binary):
+  - [x] race-prone paths audited and fixed with explicit invariants.
+  - [x] new/updated concurrency stress tests pass in `tests/concurrency/*`.
+  - [x] `make test` passes.
+- Verification: `make test` + focused concurrency suite.
+
+### FEAT-402 (P0) Async/IO API Consistency Across Backends
+- Scope: align POSIX/BSD/Win32 IO result APIs, timeout semantics, and error strings.
+- Acceptance (binary):
+  - [x] `read_result/write_result` parity across supported backends.
+  - [x] timeout/cancel semantics documented and test-covered.
+  - [x] `make test` passes on current platform with parity guards for others.
+- Verification: `make test` + async/io regression cases.
+
+### FEAT-403 (P1) Event Backend Efficiency & Fairness Hardening
+- Scope: reduce per-wait syscall churn, tighten wake-up fairness and queue balance evidence.
+- Acceptance (binary):
+  - [ ] backend wait path avoids repeated expensive fd lifecycle where feasible.
+  - [ ] fairness regression test demonstrates no starvation in synthetic contention.
+  - [ ] `make test` passes.
+- Verification: `make test` + added fairness test.
+
+### FEAT-404 (P1) Typed Async Error Model Refinement
+- Scope: reduce fragile string-literal errors in async/IO path; introduce typed/domain-tagged errors where viable.
+- Acceptance (binary):
+  - [ ] core async errors converted from ad-hoc literals to typed or normalized domain codes.
+  - [ ] compatibility wrappers preserved.
+  - [ ] `make test` passes.
+- Verification: `make test` + error-path unit coverage.
+
+### FEAT-405 (P2) Perf/Memory Milestone Baseline
+- Scope: benchmark hooks for container/async hot paths and memory overhead checkpoints.
+- Acceptance (binary):
+  - [ ] reproducible baseline command documented.
+  - [ ] at least one perf and one memory metric tracked in repo docs.
+  - [ ] no functional regressions (`make test`).
+- Verification: `make test` + benchmark script/check commands.
 
 ## Completed Commits (Trace)
 - `e2f5836` feat: add json serialization support for option and result
@@ -69,13 +138,6 @@ Scope baseline: `docs/spp_design.md`
 - `e9ab384` feat: add non-blocking event try_wait on posix backends
 - `39d849b` feat: align bsd asyncio with Result read/write APIs
 - `333b187` migrate file and async io APIs toward Result
-- `pending` add async runtime capability gap audit document
-- `pending` add MPMC channel baseline (`Sender`/`Receiver`)
-- `pending` migrate udp recv path toward Result (with compatibility wrapper)
-- `pending` add free `match(...)` API for Variant
-- `pending` add const/non-mutating lookup path for string-keyed Map
-- `pending` add Result combinators (`map/map_err/and_then/or_else`)
-- `pending` migrate format1 parse APIs toward Result (with compatibility wrappers)
 - `f353320` add core Result type for explicit error handling
 - `829345c` fix map slot move lifecycle during rehash
 - `2ec6ade` fix queue and heap reserve destruction semantics
@@ -90,7 +152,11 @@ Scope baseline: `docs/spp_design.md`
 - `6b4a525` reorganize to modern-c-makefile directory layout
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
+## Planned Next Feat Commits (In Order)
+1. `feat`: FEAT-403 event backend efficiency/fairness hardening.
+2. `feat`: FEAT-404 typed async error model refinement.
+3. `feat`: FEAT-405 perf/memory milestone baseline.
+
 ## Immediate Next Step
-1. Complete concurrent container safety pass (Phase 4 remaining unchecked item).
-2. Continue Phase 5 network and IO API consistency pass.
-3. Continue one-feature-per-commit with `make test` gate.
+1. Execute FEAT-403 event backend efficiency/fairness hardening.
+2. Run full `make test` gate and update this file's checklist before moving to FEAT-404.
