@@ -76,9 +76,9 @@ Scope baseline: `docs/spp_design.md`
 
 ### Phase 5: Ecosystem & Optimization
 - [x] Serialization / reflection integration checkpoints
-- [ ] Network and IO API consistency pass
-- [ ] Performance and memory optimization milestones
-- Status: in progress
+- [x] Network and IO API consistency pass
+- [x] Performance and memory optimization milestones
+- Status: completed
 
 ## Remaining Feat Backlog (Autoresearch 5-Round Target)
 
@@ -101,25 +101,25 @@ Scope baseline: `docs/spp_design.md`
 ### FEAT-403 (P1) Event Backend Efficiency & Fairness Hardening
 - Scope: reduce per-wait syscall churn, tighten wake-up fairness and queue balance evidence.
 - Acceptance (binary):
-  - [ ] backend wait path avoids repeated expensive fd lifecycle where feasible.
-  - [ ] fairness regression test demonstrates no starvation in synthetic contention.
-  - [ ] `make test` passes.
+  - [x] backend wait path avoids repeated expensive fd lifecycle where feasible.
+  - [x] fairness regression test demonstrates no starvation in synthetic contention.
+  - [x] `make test` passes.
 - Verification: `make test` + added fairness test.
 
 ### FEAT-404 (P1) Typed Async Error Model Refinement
 - Scope: reduce fragile string-literal errors in async/IO path; introduce typed/domain-tagged errors where viable.
 - Acceptance (binary):
-  - [ ] core async errors converted from ad-hoc literals to typed or normalized domain codes.
-  - [ ] compatibility wrappers preserved.
-  - [ ] `make test` passes.
+  - [x] core async errors converted from ad-hoc literals to typed or normalized domain codes.
+  - [x] compatibility wrappers preserved.
+  - [x] `make test` passes.
 - Verification: `make test` + error-path unit coverage.
 
 ### FEAT-405 (P2) Perf/Memory Milestone Baseline
 - Scope: benchmark hooks for container/async hot paths and memory overhead checkpoints.
 - Acceptance (binary):
-  - [ ] reproducible baseline command documented.
-  - [ ] at least one perf and one memory metric tracked in repo docs.
-  - [ ] no functional regressions (`make test`).
+  - [x] reproducible baseline command documented.
+  - [x] at least one perf and one memory metric tracked in repo docs.
+  - [x] no functional regressions (`make test`).
 - Verification: `make test` + benchmark script/check commands.
 
 ## Completed Commits (Trace)
@@ -153,10 +153,9 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Planned Next Feat Commits (In Order)
-1. `feat`: FEAT-403 event backend efficiency/fairness hardening.
-2. `feat`: FEAT-404 typed async error model refinement.
-3. `feat`: FEAT-405 perf/memory milestone baseline.
+1. `chore`: add performance regression thresholds and CI gate for `bench/baseline.tsv`.
+2. `chore`: extend perf baseline cases for io/net workloads.
 
 ## Immediate Next Step
-1. Execute FEAT-403 event backend efficiency/fairness hardening.
-2. Run full `make test` gate and update this file's checklist before moving to FEAT-404.
+1. Add baseline delta check script and fail threshold policy.
+2. Wire baseline check into CI.
