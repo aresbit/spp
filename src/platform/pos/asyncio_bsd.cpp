@@ -12,7 +12,9 @@
 namespace spp::Async {
 
 [[nodiscard]] Task<Result<Vec<u8, Files::Alloc>, String_View>> read_result(Pool<>& pool,
-                                                                            String_View path_) noexcept {
+                                                                            String_View path_,
+                                                                            File_IO_Mode mode) noexcept {
+    (void)mode;
     (void)pool;
 
     int fd = -1;
@@ -66,7 +68,9 @@ namespace spp::Async {
 }
 
 [[nodiscard]] Task<Result<u64, String_View>> write_result(Pool<>& pool, String_View path_,
-                                                          Slice<u8> data) noexcept {
+                                                          Slice<u8> data,
+                                                          File_IO_Mode mode) noexcept {
+    (void)mode;
     (void)pool;
 
     int fd = -1;
@@ -98,8 +102,10 @@ namespace spp::Async {
 }
 
 [[nodiscard]] Task<Result<u64, String_View>> pread_result(Pool<>& pool, String_View path,
-                                                          u64 offset, Slice<u8> out) noexcept {
+                                                          u64 offset, Slice<u8> out,
+                                                          File_IO_Mode mode) noexcept {
     (void)pool;
+    (void)mode;
     auto ret = Files::pread_result(path, offset, out);
     if(!ret.ok()) {
         co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
@@ -109,8 +115,10 @@ namespace spp::Async {
 
 [[nodiscard]] Task<Result<u64, String_View>> pwrite_result(Pool<>& pool, String_View path,
                                                            u64 offset,
-                                                           Slice<const u8> data) noexcept {
+                                                           Slice<const u8> data,
+                                                           File_IO_Mode mode) noexcept {
     (void)pool;
+    (void)mode;
     auto ret = Files::pwrite_result(path, offset, data);
     if(!ret.ok()) {
         co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
@@ -120,8 +128,10 @@ namespace spp::Async {
 
 [[nodiscard]] Task<Result<u64, String_View>> preadv_result(Pool<>& pool, String_View path,
                                                            u64 offset,
-                                                           Slice<Files::Read_IO_Slice> outs) noexcept {
+                                                           Slice<Files::Read_IO_Slice> outs,
+                                                           File_IO_Mode mode) noexcept {
     (void)pool;
+    (void)mode;
     auto ret = Files::preadv_result(path, offset, outs);
     if(!ret.ok()) {
         co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
@@ -130,8 +140,10 @@ namespace spp::Async {
 }
 
 [[nodiscard]] Task<Result<u64, String_View>> pwritev_result(
-    Pool<>& pool, String_View path, u64 offset, Slice<const Files::Write_IO_Slice> inputs) noexcept {
+    Pool<>& pool, String_View path, u64 offset, Slice<const Files::Write_IO_Slice> inputs,
+    File_IO_Mode mode) noexcept {
     (void)pool;
+    (void)mode;
     auto ret = Files::pwritev_result(path, offset, inputs);
     if(!ret.ok()) {
         co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
@@ -140,8 +152,10 @@ namespace spp::Async {
 }
 
 [[nodiscard]] Task<Result<u64, String_View>> fdatasync_result(Pool<>& pool,
-                                                              String_View path) noexcept {
+                                                              String_View path,
+                                                              File_IO_Mode mode) noexcept {
     (void)pool;
+    (void)mode;
     auto ret = Files::fdatasync_result(path);
     if(!ret.ok()) {
         co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
@@ -149,14 +163,16 @@ namespace spp::Async {
     co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
 }
 
-[[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path) noexcept {
-    auto result = co_await read_result(pool, path);
+[[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path,
+                                                    File_IO_Mode mode) noexcept {
+    auto result = co_await read_result(pool, path, mode);
     if(!result.ok()) co_return Opt<Vec<u8, Files::Alloc>>{};
     co_return Opt{spp::move(result.unwrap())};
 }
 
-[[nodiscard]] Task<bool> write(Pool<>& pool, String_View path, Slice<u8> data) noexcept {
-    auto result = co_await write_result(pool, path, data);
+[[nodiscard]] Task<bool> write(Pool<>& pool, String_View path, Slice<u8> data,
+                               File_IO_Mode mode) noexcept {
+    auto result = co_await write_result(pool, path, data, mode);
     co_return result.ok();
 }
 

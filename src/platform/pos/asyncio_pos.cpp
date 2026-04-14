@@ -189,6 +189,8 @@ struct Io_Uring {
 
 namespace spp::Async {
 
+constexpr u64 DIRECT_IO_ALIGN = 4096;
+
 [[nodiscard]] static Thread::Atomic& io_uring_disabled_flag() noexcept {
     static Thread::Atomic disabled;
     return disabled;
@@ -201,6 +203,49 @@ namespace spp::Async {
 static void disable_io_uring_globally_now() noexcept {
     io_uring_disabled_flag().exchange(1);
 }
+
+[[nodiscard]] static bool direct_io_aligned(const void* ptr, u64 offset, u64 length) noexcept {
+    if(ptr == null) return false;
+    uptr p = reinterpret_cast<uptr>(ptr);
+    return (p % DIRECT_IO_ALIGN == 0) && (offset % DIRECT_IO_ALIGN == 0) &&
+           (length % DIRECT_IO_ALIGN == 0);
+}
+
+struct Io_Uring_Cache {
+    bool attempted = false;
+    bool available = false;
+    Io_Uring ring;
+};
+
+[[nodiscard]] static bool& worker_ring_in_flight() noexcept {
+    static thread_local bool in_flight = false;
+    return in_flight;
+}
+
+[[nodiscard]] static Io_Uring* worker_ring() noexcept {
+    if(io_uring_globally_disabled_now()) return null;
+    static thread_local Io_Uring_Cache cache;
+    if(!cache.attempted) {
+        cache.attempted = true;
+        cache.available = cache.ring.init(256);
+        if(!cache.available) {
+            disable_io_uring_globally_now();
+            return null;
+        }
+    }
+    if(!cache.available || worker_ring_in_flight()) return null;
+    return &cache.ring;
+}
+
+struct In_Flight_Guard {
+    In_Flight_Guard() noexcept : flag(worker_ring_in_flight()) {
+        flag = true;
+    }
+    ~In_Flight_Guard() noexcept {
+        flag = false;
+    }
+    bool& flag;
+};
 
 [[nodiscard]] static Task<Result<i32, String_View>> await_uring_cqe(Pool<>& pool,
                                                                     Io_Uring& ring) noexcept {
@@ -217,7 +262,8 @@ static void disable_io_uring_globally_now() noexcept {
 }
 
 [[nodiscard]] Task<Result<Vec<u8, Files::Alloc>, String_View>> read_result(Pool<>& pool,
-                                                                            String_View path_) noexcept {
+                                                                            String_View path_,
+                                                                            File_IO_Mode mode) noexcept {
     int fd = -1;
     off_t full_size = 0;
     Region(R) {
@@ -241,7 +287,7 @@ static void disable_io_uring_globally_now() noexcept {
         co_return Result<Vec<u8, Files::Alloc>, String_View>::ok(spp::move(data));
     }
 
-    auto got = co_await pread_result(pool, path_, 0, data.slice());
+    auto got = co_await pread_result(pool, path_, 0, data.slice(), mode);
     if(!got.ok() || got.unwrap() != static_cast<u64>(full_size)) {
         co_return Result<Vec<u8, Files::Alloc>, String_View>::err("read_failed"_v);
     }
@@ -249,14 +295,15 @@ static void disable_io_uring_globally_now() noexcept {
 }
 
 [[nodiscard]] Task<Result<u64, String_View>> write_result(Pool<>& pool, String_View path_,
-                                                          Slice<u8> data) noexcept {
+                                                          Slice<u8> data,
+                                                          File_IO_Mode mode) noexcept {
     auto trunc = Files::truncate_result(path_, 0);
     if(!trunc.ok()) {
         warn("Failed to truncate file % before async write: %", path_, Log::sys_error());
         co_return Result<u64, String_View>::err("create_failed"_v);
     }
 
-    auto wrote = co_await pwrite_result(pool, path_, 0, data);
+    auto wrote = co_await pwrite_result(pool, path_, 0, data, mode);
     if(!wrote.ok()) {
         co_return Result<u64, String_View>::err(spp::move(wrote.unwrap_err()));
     }
@@ -264,32 +311,39 @@ static void disable_io_uring_globally_now() noexcept {
 }
 
 [[nodiscard]] Task<Result<u64, String_View>> pread_result(Pool<>& pool, String_View path,
-                                                          u64 offset, Slice<u8> out) noexcept {
+                                                          u64 offset, Slice<u8> out,
+                                                          File_IO_Mode mode) noexcept {
+    if(mode == File_IO_Mode::direct && !direct_io_aligned(out.data(), offset, out.length())) {
+        co_return Result<u64, String_View>::err("direct_alignment"_v);
+    }
+
     if(io_uring_globally_disabled_now()) {
         auto ret = Files::pread_result(path, offset, out);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    Io_Uring ring;
-    if(!ring.init(8)) {
-        disable_io_uring_globally_now();
+    Io_Uring* ring = worker_ring();
+    if(!ring) {
         auto ret = Files::pread_result(path, offset, out);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
+    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
         auto terminated = path.terminate<Mregion<R>>();
-        fd = open(reinterpret_cast<const char*>(terminated.data()), O_RDONLY);
+        int flags = O_RDONLY;
+        if(mode == File_IO_Mode::direct) flags |= O_DIRECT;
+        fd = open(reinterpret_cast<const char*>(terminated.data()), flags);
     }
     if(fd < 0) {
         warn("Failed to open file %: %", path, Log::sys_error());
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring.reserve_sqe();
+    auto* sqe = ring->reserve_sqe();
     if(!sqe) {
         close(fd);
         co_return Result<u64, String_View>::err("pread_failed"_v);
@@ -300,15 +354,14 @@ static void disable_io_uring_globally_now() noexcept {
     sqe->addr = reinterpret_cast<u64>(out.data());
     sqe->len = static_cast<u32>(out.length());
 
-    if(ring.submit() < 0) {
+    if(ring->submit() < 0) {
         close(fd);
-        disable_io_uring_globally_now();
         auto ret = Files::pread_result(path, offset, out);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    auto cqe = co_await await_uring_cqe(pool, ring);
+    auto cqe = co_await await_uring_cqe(pool, *ring);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("pread_failed"_v);
@@ -322,32 +375,39 @@ static void disable_io_uring_globally_now() noexcept {
 
 [[nodiscard]] Task<Result<u64, String_View>> pwrite_result(Pool<>& pool, String_View path,
                                                            u64 offset,
-                                                           Slice<const u8> data) noexcept {
+                                                           Slice<const u8> data,
+                                                           File_IO_Mode mode) noexcept {
+    if(mode == File_IO_Mode::direct && !direct_io_aligned(data.data(), offset, data.length())) {
+        co_return Result<u64, String_View>::err("direct_alignment"_v);
+    }
+
     if(io_uring_globally_disabled_now()) {
         auto ret = Files::pwrite_result(path, offset, data);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    Io_Uring ring;
-    if(!ring.init(8)) {
-        disable_io_uring_globally_now();
+    Io_Uring* ring = worker_ring();
+    if(!ring) {
         auto ret = Files::pwrite_result(path, offset, data);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
+    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
         auto terminated = path.terminate<Mregion<R>>();
-        fd = open(reinterpret_cast<const char*>(terminated.data()), O_WRONLY | O_CREAT, 0644);
+        int flags = O_WRONLY | O_CREAT;
+        if(mode == File_IO_Mode::direct) flags |= O_DIRECT;
+        fd = open(reinterpret_cast<const char*>(terminated.data()), flags, 0644);
     }
     if(fd < 0) {
         warn("Failed to open file %: %", path, Log::sys_error());
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring.reserve_sqe();
+    auto* sqe = ring->reserve_sqe();
     if(!sqe) {
         close(fd);
         co_return Result<u64, String_View>::err("pwrite_failed"_v);
@@ -358,15 +418,14 @@ static void disable_io_uring_globally_now() noexcept {
     sqe->addr = reinterpret_cast<u64>(data.data());
     sqe->len = static_cast<u32>(data.length());
 
-    if(ring.submit() < 0) {
+    if(ring->submit() < 0) {
         close(fd);
-        disable_io_uring_globally_now();
         auto ret = Files::pwrite_result(path, offset, data);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    auto cqe = co_await await_uring_cqe(pool, ring);
+    auto cqe = co_await await_uring_cqe(pool, *ring);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("pwrite_failed"_v);
@@ -380,7 +439,19 @@ static void disable_io_uring_globally_now() noexcept {
 
 [[nodiscard]] Task<Result<u64, String_View>> preadv_result(Pool<>& pool, String_View path,
                                                            u64 offset,
-                                                           Slice<Files::Read_IO_Slice> outs) noexcept {
+                                                           Slice<Files::Read_IO_Slice> outs,
+                                                           File_IO_Mode mode) noexcept {
+    if(mode == File_IO_Mode::direct) {
+        if(offset % DIRECT_IO_ALIGN != 0) {
+            co_return Result<u64, String_View>::err("direct_alignment"_v);
+        }
+        for(auto& out : outs) {
+            if(!direct_io_aligned(out.data, 0, out.length)) {
+                co_return Result<u64, String_View>::err("direct_alignment"_v);
+            }
+        }
+    }
+
     if(io_uring_globally_disabled_now()) {
         auto ret = Files::preadv_result(path, offset, outs);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
@@ -396,25 +467,27 @@ static void disable_io_uring_globally_now() noexcept {
         iovs.push(v);
     }
 
-    Io_Uring ring;
-    if(!ring.init(8)) {
-        disable_io_uring_globally_now();
+    Io_Uring* ring = worker_ring();
+    if(!ring) {
         auto ret = Files::preadv_result(path, offset, outs);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
+    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
         auto terminated = path.terminate<Mregion<R>>();
-        fd = open(reinterpret_cast<const char*>(terminated.data()), O_RDONLY);
+        int flags = O_RDONLY;
+        if(mode == File_IO_Mode::direct) flags |= O_DIRECT;
+        fd = open(reinterpret_cast<const char*>(terminated.data()), flags);
     }
     if(fd < 0) {
         warn("Failed to open file %: %", path, Log::sys_error());
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring.reserve_sqe();
+    auto* sqe = ring->reserve_sqe();
     if(!sqe) {
         close(fd);
         co_return Result<u64, String_View>::err("preadv_failed"_v);
@@ -425,15 +498,14 @@ static void disable_io_uring_globally_now() noexcept {
     sqe->addr = reinterpret_cast<u64>(iovs.data());
     sqe->len = static_cast<u32>(iovs.length());
 
-    if(ring.submit() < 0) {
+    if(ring->submit() < 0) {
         close(fd);
-        disable_io_uring_globally_now();
         auto ret = Files::preadv_result(path, offset, outs);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    auto cqe = co_await await_uring_cqe(pool, ring);
+    auto cqe = co_await await_uring_cqe(pool, *ring);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("preadv_failed"_v);
@@ -446,7 +518,19 @@ static void disable_io_uring_globally_now() noexcept {
 }
 
 [[nodiscard]] Task<Result<u64, String_View>> pwritev_result(
-    Pool<>& pool, String_View path, u64 offset, Slice<const Files::Write_IO_Slice> inputs) noexcept {
+    Pool<>& pool, String_View path, u64 offset, Slice<const Files::Write_IO_Slice> inputs,
+    File_IO_Mode mode) noexcept {
+    if(mode == File_IO_Mode::direct) {
+        if(offset % DIRECT_IO_ALIGN != 0) {
+            co_return Result<u64, String_View>::err("direct_alignment"_v);
+        }
+        for(auto& in : inputs) {
+            if(!direct_io_aligned(in.data, 0, in.length)) {
+                co_return Result<u64, String_View>::err("direct_alignment"_v);
+            }
+        }
+    }
+
     if(io_uring_globally_disabled_now()) {
         auto ret = Files::pwritev_result(path, offset, inputs);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
@@ -462,25 +546,27 @@ static void disable_io_uring_globally_now() noexcept {
         iovs.push(v);
     }
 
-    Io_Uring ring;
-    if(!ring.init(8)) {
-        disable_io_uring_globally_now();
+    Io_Uring* ring = worker_ring();
+    if(!ring) {
         auto ret = Files::pwritev_result(path, offset, inputs);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
+    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
         auto terminated = path.terminate<Mregion<R>>();
-        fd = open(reinterpret_cast<const char*>(terminated.data()), O_WRONLY | O_CREAT, 0644);
+        int flags = O_WRONLY | O_CREAT;
+        if(mode == File_IO_Mode::direct) flags |= O_DIRECT;
+        fd = open(reinterpret_cast<const char*>(terminated.data()), flags, 0644);
     }
     if(fd < 0) {
         warn("Failed to open file %: %", path, Log::sys_error());
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring.reserve_sqe();
+    auto* sqe = ring->reserve_sqe();
     if(!sqe) {
         close(fd);
         co_return Result<u64, String_View>::err("pwritev_failed"_v);
@@ -491,15 +577,14 @@ static void disable_io_uring_globally_now() noexcept {
     sqe->addr = reinterpret_cast<u64>(iovs.data());
     sqe->len = static_cast<u32>(iovs.length());
 
-    if(ring.submit() < 0) {
+    if(ring->submit() < 0) {
         close(fd);
-        disable_io_uring_globally_now();
         auto ret = Files::pwritev_result(path, offset, inputs);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    auto cqe = co_await await_uring_cqe(pool, ring);
+    auto cqe = co_await await_uring_cqe(pool, *ring);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("pwritev_failed"_v);
@@ -512,32 +597,35 @@ static void disable_io_uring_globally_now() noexcept {
 }
 
 [[nodiscard]] Task<Result<u64, String_View>> fdatasync_result(Pool<>& pool,
-                                                              String_View path) noexcept {
+                                                              String_View path,
+                                                              File_IO_Mode mode) noexcept {
     if(io_uring_globally_disabled_now()) {
         auto ret = Files::fdatasync_result(path);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    Io_Uring ring;
-    if(!ring.init(8)) {
-        disable_io_uring_globally_now();
+    Io_Uring* ring = worker_ring();
+    if(!ring) {
         auto ret = Files::fdatasync_result(path);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
+    In_Flight_Guard in_flight;
 
     int fd = -1;
     Region(R) {
         auto terminated = path.terminate<Mregion<R>>();
-        fd = open(reinterpret_cast<const char*>(terminated.data()), O_WRONLY | O_CREAT, 0644);
+        int flags = O_WRONLY | O_CREAT;
+        if(mode == File_IO_Mode::direct) flags |= O_DIRECT;
+        fd = open(reinterpret_cast<const char*>(terminated.data()), flags, 0644);
     }
     if(fd < 0) {
         warn("Failed to open file %: %", path, Log::sys_error());
         co_return Result<u64, String_View>::err("open_failed"_v);
     }
 
-    auto* sqe = ring.reserve_sqe();
+    auto* sqe = ring->reserve_sqe();
     if(!sqe) {
         close(fd);
         co_return Result<u64, String_View>::err("fdatasync_failed"_v);
@@ -546,15 +634,14 @@ static void disable_io_uring_globally_now() noexcept {
     sqe->fd = fd;
     sqe->fsync_flags = IORING_FSYNC_DATASYNC;
 
-    if(ring.submit() < 0) {
+    if(ring->submit() < 0) {
         close(fd);
-        disable_io_uring_globally_now();
         auto ret = Files::fdatasync_result(path);
         if(!ret.ok()) co_return Result<u64, String_View>::err(spp::move(ret.unwrap_err()));
         co_return Result<u64, String_View>::ok(spp::move(ret.unwrap()));
     }
 
-    auto cqe = co_await await_uring_cqe(pool, ring);
+    auto cqe = co_await await_uring_cqe(pool, *ring);
     close(fd);
     if(!cqe.ok()) {
         co_return Result<u64, String_View>::err("fdatasync_failed"_v);
@@ -566,14 +653,16 @@ static void disable_io_uring_globally_now() noexcept {
     co_return Result<u64, String_View>::ok(u64{static_cast<u64>(res)});
 }
 
-[[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path) noexcept {
-    auto result = co_await read_result(pool, path);
+[[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path,
+                                                    File_IO_Mode mode) noexcept {
+    auto result = co_await read_result(pool, path, mode);
     if(!result.ok()) co_return Opt<Vec<u8, Files::Alloc>>{};
     co_return Opt{move(result.unwrap())};
 }
 
-[[nodiscard]] Task<bool> write(Pool<>& pool, String_View path, Slice<u8> data) noexcept {
-    auto result = co_await write_result(pool, path, data);
+[[nodiscard]] Task<bool> write(Pool<>& pool, String_View path, Slice<u8> data,
+                               File_IO_Mode mode) noexcept {
+    auto result = co_await write_result(pool, path, data, mode);
     co_return result.ok();
 }
 

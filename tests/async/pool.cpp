@@ -301,6 +301,17 @@ i32 main() {
             auto removed = Files::remove_result(kPath);
             assert(removed.ok());
         }
+#ifdef SPP_OS_LINUX
+        {
+            String_View kPath = "async_pool_io_direct_mode.tmp"_v;
+            Array<u8, 8> payload{u8{'D'}, u8{'I'}, u8{'R'}, u8{'E'}, u8{'C'}, u8{'T'}, u8{'!'}, u8{'\n'}};
+            auto bad_write =
+                Async::pwrite_result(pool, kPath, 1, payload.slice(), Async::File_IO_Mode::direct)
+                    .block();
+            assert(!bad_write.ok());
+            assert(bad_write.unwrap_err() == "direct_alignment"_v);
+        }
+#endif
         {
             Vec<Async::Event> events;
             events.push(Async::Event{});
