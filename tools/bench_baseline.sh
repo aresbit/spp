@@ -52,6 +52,7 @@ run_case() {
   run_case "async_pool" "$ROOT_DIR/tests/async" "$ROOT_DIR/build/bin/tests/async/pool"
   run_case "concurrency_map_vec" "$ROOT_DIR/tests/concurrency" "$ROOT_DIR/build/bin/tests/concurrency/concurrent"
   run_case "io_files" "$ROOT_DIR/tests/io" "$ROOT_DIR/build/bin/tests/io/files"
+  run_case "io_lock" "$ROOT_DIR/tests/io" "$ROOT_DIR/build/bin/tests/io/lock"
   run_case "io_net" "$ROOT_DIR/tests/io" "$ROOT_DIR/build/bin/tests/io/net"
 } > "$OUT_FILE"
 

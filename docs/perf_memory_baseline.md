@@ -36,6 +36,7 @@ The baseline tracks one performance metric and one memory metric per case:
 - `async_pool`: async runtime scheduling and wait-path stress
 - `concurrency_map_vec`: concurrent container mixed operations
 - `io_files`: file IO read/write and metadata operations
+- `io_lock`: file locking and lock contention primitives
 - `io_net`: TCP bind/listen/connect/send/recv path
 
 ## Notes

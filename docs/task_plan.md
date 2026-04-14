@@ -153,9 +153,9 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Planned Next Feat Commits (In Order)
-1. `chore`: refine benchmark case representativeness for async/io hot paths.
-2. `chore`: add baseline update checklist for bench drift management.
+1. `chore`: add baseline update checklist for bench drift management.
+2. `chore`: split CI bench jobs by case group for clearer regression ownership.
 
 ## Immediate Next Step
-1. Add an async IO combined micro-case to baseline suite.
-2. Document baseline update review checklist in docs.
+1. Document baseline update review checklist in docs.
+2. Add explicit ownership for each benchmark case in task plan.

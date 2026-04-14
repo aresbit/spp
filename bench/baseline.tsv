@@ -1,5 +1,6 @@
 case	elapsed_sec	max_rss_kb
-async_pool	0.28	4260
-concurrency_map_vec	0.03	4144
-io_files	0.00	4156
+async_pool	0.28	4096
+concurrency_map_vec	0.02	4188
+io_files	0.00	4160
+io_lock	0.00	4164
 io_net	0.10	4256
