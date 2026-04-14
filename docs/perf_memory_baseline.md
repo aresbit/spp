@@ -12,6 +12,12 @@ The script compiles test binaries and writes baseline metrics to:
 
 - `bench/baseline.tsv`
 
+To run the regression gate against baseline:
+
+```bash
+./tools/bench_check.sh
+```
+
 ## Metrics
 
 The baseline tracks one performance metric and one memory metric per case:
@@ -29,3 +35,5 @@ The baseline tracks one performance metric and one memory metric per case:
 - Measurements are collected via `/usr/bin/time`.
 - Keep machine load stable when comparing baselines.
 - Re-run `./tools/bench_baseline.sh` after major runtime/container changes and review deltas in `bench/baseline.tsv`.
+- Allowed regressions are configured in `bench/thresholds.tsv`.
+- CI runs `make bench-check` and fails on threshold breach.

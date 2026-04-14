@@ -1,0 +1,3 @@
+case	max_elapsed_regress_pct	max_rss_regress_pct
+async_pool	150	60
+concurrency_map_vec	200	80

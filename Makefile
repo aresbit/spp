@@ -44,7 +44,7 @@ TEST_SRCS := $(shell find tests -type f -name '*.cpp' | sort)
 TEST_BINS := $(patsubst tests/%.cpp,$(BIN_DIR)/tests/%,$(TEST_SRCS))
 TEST_RELS := $(patsubst tests/%.cpp,%,$(TEST_SRCS))
 
-.PHONY: all lib smoke test format clean print-config
+.PHONY: all lib smoke test bench-check format clean print-config
 
 all: lib
 
@@ -63,6 +63,9 @@ test: $(TEST_BINS)
 		echo "[test] $$rel"; \
 		(cd "$$dir" && "$$root/$$bin"); \
 	done
+
+bench-check:
+	./tools/bench_check.sh
 
 $(LIB): $(OBJS)
 	@mkdir -p $(LIB_DIR)

@@ -4,6 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_FILE="$ROOT_DIR/bench/baseline.tsv"
 
+if [[ "${1:-}" == "--out" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    echo "error: --out requires a file path" >&2
+    exit 1
+  fi
+  OUT_FILE="$2"
+elif [[ -n "${1:-}" ]]; then
+  echo "error: unknown argument: $1" >&2
+  echo "usage: $0 [--out <path>]" >&2
+  exit 1
+fi
+
 if ! command -v /usr/bin/time >/dev/null 2>&1; then
   echo "error: /usr/bin/time not found" >&2
   exit 1

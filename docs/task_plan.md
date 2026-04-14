@@ -153,9 +153,9 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Planned Next Feat Commits (In Order)
-1. `chore`: add performance regression thresholds and CI gate for `bench/baseline.tsv`.
-2. `chore`: extend perf baseline cases for io/net workloads.
+1. `chore`: extend perf baseline cases for io/net workloads.
+2. `chore`: tighten per-case threshold policy after io/net baselines.
 
 ## Immediate Next Step
-1. Add baseline delta check script and fail threshold policy.
-2. Wire baseline check into CI.
+1. Add io/net benchmark cases into baseline and threshold tables.
+2. Re-record baseline and validate `make bench-check` stability.
