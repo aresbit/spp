@@ -204,30 +204,39 @@ private:
     }
 
     void do_events() noexcept {
+        auto flush_enqueued_events = [this]() noexcept {
+            for(auto& [event, state] : events_to_enqueue) {
+                pending_events.push(spp::move(event));
+                pending_event_jobs.push(spp::move(state));
+            }
+            events_to_enqueue.clear();
+        };
+
         for(;;) {
             u64 idx = Event::wait_any(pending_events.slice());
-            Thread::Lock lock(events_mut);
             if(idx == 0) {
+                Thread::Lock lock(events_mut);
                 if(shutdown.load()) return;
 
-                for(auto& [event, state] : events_to_enqueue) {
-                    pending_events.push(spp::move(event));
-                    pending_event_jobs.push(spp::move(state));
+                flush_enqueued_events();
+                while(pending_events[0].try_wait()) {
+                    pending_events[0].reset();
                 }
-                events_to_enqueue.clear();
-
-                pending_events[0].reset();
             } else {
-                auto job = spp::move(pending_event_jobs[idx - 1]);
+                Handle<> job;
+                {
+                    Thread::Lock lock(events_mut);
+                    if(idx >= pending_events.length()) continue;
+                    job = spp::move(pending_event_jobs[idx - 1]);
 
-                if(pending_events.length() > 2) {
-                    swap(pending_events[idx], pending_events.back());
-                    swap(pending_event_jobs[idx - 1], pending_event_jobs.back());
+                    if(pending_events.length() > 2) {
+                        swap(pending_events[idx], pending_events.back());
+                        swap(pending_event_jobs[idx - 1], pending_event_jobs.back());
+                    }
+                    pending_events.pop();
+                    pending_event_jobs.pop();
+                    metrics_event_completed.incr();
                 }
-                pending_events.pop();
-                pending_event_jobs.pop();
-
-                metrics_event_completed.incr();
                 enqueue(job);
             }
         }
