@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 namespace spp::Files {
@@ -107,6 +108,68 @@ namespace spp::Files {
     return File_Result<u64>::ok(static_cast<u64>(ret));
 }
 
+[[nodiscard]] File_Result<u64> preadv_result(String_View path_, u64 offset,
+                                             Slice<Read_IO_Slice> outs) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_RDONLY);
+    }
+    if(fd == -1) {
+        warn("Failed to open file %: %", path_, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+
+    u64 total = 0;
+    off_t cur = static_cast<off_t>(offset);
+    for(u64 i = 0; i < outs.length(); i++) {
+        auto out = outs[i];
+        if(out.length == 0) continue;
+        ssize_t ret = pread(fd, out.data, out.length, cur);
+        if(ret == -1) {
+            warn("Failed to preadv file %: %", path_, Log::sys_error());
+            close(fd);
+            return File_Result<u64>::err("preadv_failed"_v);
+        }
+        total += static_cast<u64>(ret);
+        cur += static_cast<off_t>(ret);
+        if(static_cast<u64>(ret) < out.length) break;
+    }
+    close(fd);
+    return File_Result<u64>::ok(spp::move(total));
+}
+
+[[nodiscard]] File_Result<u64> pwritev_result(String_View path_, u64 offset,
+                                              Slice<const Write_IO_Slice> inputs) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_WRONLY | O_CREAT, 0644);
+    }
+    if(fd == -1) {
+        warn("Failed to open file %: %", path_, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+
+    u64 total = 0;
+    off_t cur = static_cast<off_t>(offset);
+    for(u64 i = 0; i < inputs.length(); i++) {
+        auto in = inputs[i];
+        if(in.length == 0) continue;
+        ssize_t ret = pwrite(fd, in.data, in.length, cur);
+        if(ret == -1) {
+            warn("Failed to pwritev file %: %", path_, Log::sys_error());
+            close(fd);
+            return File_Result<u64>::err("pwritev_failed"_v);
+        }
+        total += static_cast<u64>(ret);
+        cur += static_cast<off_t>(ret);
+        if(static_cast<u64>(ret) < in.length) break;
+    }
+    close(fd);
+    return File_Result<u64>::ok(spp::move(total));
+}
+
 [[nodiscard]] File_Result<u64> truncate_result(String_View path_, u64 size) noexcept {
     int fd = -1;
     Region(R) {
@@ -140,6 +203,31 @@ namespace spp::Files {
         warn("Failed to fsync file %: %", path_, Log::sys_error());
         close(fd);
         return File_Result<u64>::err("fsync_failed"_v);
+    }
+    close(fd);
+    return File_Result<u64>::ok(0);
+}
+
+[[nodiscard]] File_Result<u64> fdatasync_result(String_View path_) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_WRONLY);
+    }
+    if(fd == -1) {
+        warn("Failed to open file %: %", path_, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+
+#if defined(__APPLE__)
+    int ret = fcntl(fd, F_FULLFSYNC);
+#else
+    int ret = fdatasync(fd);
+#endif
+    if(ret == -1) {
+        warn("Failed to fdatasync file %: %", path_, Log::sys_error());
+        close(fd);
+        return File_Result<u64>::err("fdatasync_failed"_v);
     }
     close(fd);
     return File_Result<u64>::ok(0);
@@ -276,6 +364,53 @@ namespace spp::Files {
     mapped.data = reinterpret_cast<u8*>(ptr);
     mapped.length = map_len;
     return File_Result<Mapped_File>::ok(spp::move(mapped));
+}
+
+[[nodiscard]] File_Result<u64> madvise_result(const Mapped_File& mapped, Madvise_Hint hint) noexcept {
+    if(mapped.data == null || mapped.length == 0) return File_Result<u64>::err("invalid_map"_v);
+    int advice = MADV_NORMAL;
+    switch(hint) {
+        case Madvise_Hint::normal: advice = MADV_NORMAL; break;
+        case Madvise_Hint::sequential: advice = MADV_SEQUENTIAL; break;
+        case Madvise_Hint::random: advice = MADV_RANDOM; break;
+        case Madvise_Hint::willneed: advice = MADV_WILLNEED; break;
+        case Madvise_Hint::dontneed: advice = MADV_DONTNEED; break;
+    }
+    if(::madvise(mapped.data, mapped.length, advice) == -1) {
+        warn("Failed to madvise mapped file: %", Log::sys_error());
+        return File_Result<u64>::err("madvise_failed"_v);
+    }
+    u64 advised = mapped.length;
+    return File_Result<u64>::ok(spp::move(advised));
+}
+
+[[nodiscard]] File_Result<u64> fallocate_result(String_View path_, u64 size) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_WRONLY | O_CREAT, 0644);
+    }
+    if(fd == -1) {
+        warn("Failed to open file %: %", path_, Log::sys_error());
+        return File_Result<u64>::err("open_failed"_v);
+    }
+
+    int ret = 0;
+#if defined(__linux__)
+    ret = posix_fallocate(fd, 0, static_cast<off_t>(size));
+    if(ret != 0) errno = ret;
+#elif defined(__APPLE__) || defined(__FreeBSD__)
+    ret = ftruncate(fd, static_cast<off_t>(size));
+#else
+    ret = ftruncate(fd, static_cast<off_t>(size));
+#endif
+    if(ret != 0) {
+        warn("Failed to fallocate file %: %", path_, Log::sys_error());
+        close(fd);
+        return File_Result<u64>::err("fallocate_failed"_v);
+    }
+    close(fd);
+    return File_Result<u64>::ok(spp::move(size));
 }
 
 [[nodiscard]] File_Result<u64> msync_result(const Mapped_File& mapped) noexcept {

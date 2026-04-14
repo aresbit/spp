@@ -18,13 +18,36 @@ struct Mapped_File {
     uptr handle1 = 0;
 };
 
+struct Read_IO_Slice {
+    u8* data = null;
+    u64 length = 0;
+};
+
+struct Write_IO_Slice {
+    const u8* data = null;
+    u64 length = 0;
+};
+
+enum struct Madvise_Hint : u32 {
+    normal = 0,
+    sequential = 1,
+    random = 2,
+    willneed = 3,
+    dontneed = 4,
+};
+
 [[nodiscard]] File_Result<Vec<u8, Alloc>> read_result(String_View path) noexcept;
 [[nodiscard]] File_Result<u64> write_result(String_View path, Slice<const u8> data) noexcept;
 [[nodiscard]] File_Result<u64> pread_result(String_View path, u64 offset, Slice<u8> out) noexcept;
 [[nodiscard]] File_Result<u64> pwrite_result(String_View path, u64 offset,
                                              Slice<const u8> data) noexcept;
+[[nodiscard]] File_Result<u64> preadv_result(String_View path, u64 offset,
+                                             Slice<Read_IO_Slice> outs) noexcept;
+[[nodiscard]] File_Result<u64> pwritev_result(String_View path, u64 offset,
+                                              Slice<const Write_IO_Slice> inputs) noexcept;
 [[nodiscard]] File_Result<u64> truncate_result(String_View path, u64 size) noexcept;
 [[nodiscard]] File_Result<u64> fsync_result(String_View path) noexcept;
+[[nodiscard]] File_Result<u64> fdatasync_result(String_View path) noexcept;
 [[nodiscard]] File_Result<bool> exists_result(String_View path) noexcept;
 [[nodiscard]] File_Result<u64> remove_result(String_View path) noexcept;
 [[nodiscard]] File_Result<u64> rename_result(String_View from, String_View to) noexcept;
@@ -33,6 +56,8 @@ struct Mapped_File {
 [[nodiscard]] File_Result<u64> acquire_lock_result(String_View lock_path) noexcept;
 [[nodiscard]] File_Result<u64> release_lock_result(String_View lock_path) noexcept;
 [[nodiscard]] File_Result<Mapped_File> mmap_result(String_View path, u64 size) noexcept;
+[[nodiscard]] File_Result<u64> madvise_result(const Mapped_File& mapped, Madvise_Hint hint) noexcept;
+[[nodiscard]] File_Result<u64> fallocate_result(String_View path, u64 size) noexcept;
 [[nodiscard]] File_Result<u64> msync_result(const Mapped_File& mapped) noexcept;
 [[nodiscard]] File_Result<u64> munmap_result(Mapped_File& mapped) noexcept;
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path) noexcept;

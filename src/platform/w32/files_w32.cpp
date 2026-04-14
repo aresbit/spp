@@ -170,6 +170,40 @@ namespace spp::Files {
     return File_Result<u64>::ok(static_cast<u64>(written));
 }
 
+[[nodiscard]] File_Result<u64> preadv_result(String_View path, u64 offset,
+                                             Slice<Read_IO_Slice> outs) noexcept {
+    u64 total = 0;
+    u64 cur = offset;
+    for(u64 i = 0; i < outs.length(); i++) {
+        auto out = outs[i];
+        if(out.length == 0) continue;
+        auto ret = pread_result(path, cur, Slice<u8>{out.data, out.length});
+        if(!ret.ok()) return ret;
+        u64 got = ret.unwrap();
+        total += got;
+        cur += got;
+        if(got < out.length) break;
+    }
+    return File_Result<u64>::ok(spp::move(total));
+}
+
+[[nodiscard]] File_Result<u64> pwritev_result(String_View path, u64 offset,
+                                              Slice<const Write_IO_Slice> inputs) noexcept {
+    u64 total = 0;
+    u64 cur = offset;
+    for(u64 i = 0; i < inputs.length(); i++) {
+        auto in = inputs[i];
+        if(in.length == 0) continue;
+        auto ret = pwrite_result(path, cur, Slice<const u8>{in.data, in.length});
+        if(!ret.ok()) return ret;
+        u64 put = ret.unwrap();
+        total += put;
+        cur += put;
+        if(put < in.length) break;
+    }
+    return File_Result<u64>::ok(spp::move(total));
+}
+
 [[nodiscard]] File_Result<u64> truncate_result(String_View path, u64 size) noexcept {
     auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
     if(ucs2_path_len == 0) {
@@ -223,6 +257,10 @@ namespace spp::Files {
 
     CloseHandle(handle);
     return File_Result<u64>::ok(0);
+}
+
+[[nodiscard]] File_Result<u64> fdatasync_result(String_View path) noexcept {
+    return fsync_result(path);
 }
 
 [[nodiscard]] File_Result<bool> exists_result(String_View path) noexcept {
@@ -401,6 +439,16 @@ namespace spp::Files {
     mapped.length = map_len;
     mapped.handle0 = reinterpret_cast<uptr>(mapping);
     return File_Result<Mapped_File>::ok(spp::move(mapped));
+}
+
+[[nodiscard]] File_Result<u64> madvise_result(const Mapped_File& mapped, Madvise_Hint) noexcept {
+    if(mapped.data == null || mapped.length == 0) return File_Result<u64>::err("invalid_map"_v);
+    u64 advised = mapped.length;
+    return File_Result<u64>::ok(spp::move(advised));
+}
+
+[[nodiscard]] File_Result<u64> fallocate_result(String_View path, u64 size) noexcept {
+    return truncate_result(path, size);
 }
 
 [[nodiscard]] File_Result<u64> msync_result(const Mapped_File& mapped) noexcept {
