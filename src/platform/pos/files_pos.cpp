@@ -1,5 +1,6 @@
 
 #include <spp/io/files.h>
+#include <spp/io/handle.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -10,6 +11,19 @@
 #include <unistd.h>
 
 namespace spp::Files {
+
+namespace {
+
+inline void close_fd(int fd) noexcept {
+    if(fd < 0) return;
+    auto handle = IO::file_handle(static_cast<uptr>(fd));
+    auto closed = IO::close_result(handle);
+    if(!closed.ok()) {
+        warn("Failed to close file handle: %", closed.unwrap_err());
+    }
+}
+
+} // namespace
 
 [[nodiscard]] File_Result<Vec<u8, Alloc>> read_result(String_View path_) noexcept {
 
@@ -34,11 +48,11 @@ namespace spp::Files {
 
     if(::read(fd, data.data(), full_size) == -1) {
         warn("Failed to read file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<Vec<u8, Alloc>>::err("read_failed"_v);
     }
 
-    close(fd);
+    close_fd(fd);
     return File_Result<Vec<u8, Alloc>>::ok(spp::move(data));
 }
 
@@ -57,11 +71,11 @@ namespace spp::Files {
 
     if(::write(fd, data.data(), data.length()) == -1) {
         warn("Failed to write file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<u64>::err("write_failed"_v);
     }
 
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(data.length());
 }
 
@@ -79,10 +93,10 @@ namespace spp::Files {
     ssize_t ret = pread(fd, out.data(), out.length(), static_cast<off_t>(offset));
     if(ret == -1) {
         warn("Failed to pread file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<u64>::err("pread_failed"_v);
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(static_cast<u64>(ret));
 }
 
@@ -101,10 +115,10 @@ namespace spp::Files {
     ssize_t ret = pwrite(fd, data.data(), data.length(), static_cast<off_t>(offset));
     if(ret == -1) {
         warn("Failed to pwrite file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<u64>::err("pwrite_failed"_v);
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(static_cast<u64>(ret));
 }
 
@@ -128,14 +142,14 @@ namespace spp::Files {
         ssize_t ret = pread(fd, out.data, out.length, cur);
         if(ret == -1) {
             warn("Failed to preadv file %: %", path_, Log::sys_error());
-            close(fd);
+            close_fd(fd);
             return File_Result<u64>::err("preadv_failed"_v);
         }
         total += static_cast<u64>(ret);
         cur += static_cast<off_t>(ret);
         if(static_cast<u64>(ret) < out.length) break;
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(spp::move(total));
 }
 
@@ -159,14 +173,14 @@ namespace spp::Files {
         ssize_t ret = pwrite(fd, in.data, in.length, cur);
         if(ret == -1) {
             warn("Failed to pwritev file %: %", path_, Log::sys_error());
-            close(fd);
+            close_fd(fd);
             return File_Result<u64>::err("pwritev_failed"_v);
         }
         total += static_cast<u64>(ret);
         cur += static_cast<off_t>(ret);
         if(static_cast<u64>(ret) < in.length) break;
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(spp::move(total));
 }
 
@@ -182,10 +196,10 @@ namespace spp::Files {
     }
     if(ftruncate(fd, static_cast<off_t>(size)) == -1) {
         warn("Failed to truncate file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<u64>::err("truncate_failed"_v);
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(spp::move(size));
 }
 
@@ -201,10 +215,10 @@ namespace spp::Files {
     }
     if(fsync(fd) == -1) {
         warn("Failed to fsync file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<u64>::err("fsync_failed"_v);
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(0);
 }
 
@@ -226,10 +240,10 @@ namespace spp::Files {
 #endif
     if(ret == -1) {
         warn("Failed to fdatasync file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<u64>::err("fdatasync_failed"_v);
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(0);
 }
 
@@ -306,7 +320,7 @@ namespace spp::Files {
         warn("Failed to acquire lock %: %", lock_path_, Log::sys_error());
         return File_Result<u64>::err("lock_failed"_v);
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(0);
 }
 
@@ -336,7 +350,7 @@ namespace spp::Files {
     struct stat info;
     if(fstat(fd, &info) == -1) {
         warn("Failed to stat mmap file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<Mapped_File>::err("stat_failed"_v);
     }
 
@@ -344,17 +358,17 @@ namespace spp::Files {
     if(size != 0 && static_cast<u64>(info.st_size) < size) {
         if(ftruncate(fd, static_cast<off_t>(size)) == -1) {
             warn("Failed to extend mmap file %: %", path_, Log::sys_error());
-            close(fd);
+            close_fd(fd);
             return File_Result<Mapped_File>::err("truncate_failed"_v);
         }
     }
     if(map_len == 0) {
-        close(fd);
+        close_fd(fd);
         return File_Result<Mapped_File>::err("map_empty"_v);
     }
 
     void* ptr = ::mmap(null, map_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    close(fd);
+    close_fd(fd);
     if(ptr == MAP_FAILED) {
         warn("Failed to mmap file %: %", path_, Log::sys_error());
         return File_Result<Mapped_File>::err("mmap_failed"_v);
@@ -406,10 +420,10 @@ namespace spp::Files {
 #endif
     if(ret != 0) {
         warn("Failed to fallocate file %: %", path_, Log::sys_error());
-        close(fd);
+        close_fd(fd);
         return File_Result<u64>::err("fallocate_failed"_v);
     }
-    close(fd);
+    close_fd(fd);
     return File_Result<u64>::ok(spp::move(size));
 }
 

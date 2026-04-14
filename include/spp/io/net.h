@@ -2,6 +2,7 @@
 #pragma once
 
 #include <spp/core/base.h>
+#include <spp/io/handle.h>
 
 #if defined SPP_OS_LINUX || defined SPP_OS_MACOS 
 #include <netinet/in.h>
@@ -59,11 +60,7 @@ struct Udp {
     }
 
 private:
-#ifdef SPP_OS_WINDOWS
-    u64 socket;
-#else
-    i32 fd;
-#endif
+    IO::Handle handle_;
 };
 
 } // namespace spp::Net

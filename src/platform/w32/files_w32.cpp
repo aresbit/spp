@@ -1,10 +1,24 @@
 
 #include <spp/io/files.h>
+#include <spp/io/handle.h>
 
 #include <spp/platform/w32_util.h>
 #include <windows.h>
 
 namespace spp::Files {
+
+namespace {
+
+inline void close_native_handle(HANDLE handle) noexcept {
+    if(handle == null || handle == INVALID_HANDLE_VALUE) return;
+    auto io_handle = IO::file_handle(reinterpret_cast<uptr>(handle));
+    auto closed = IO::close_result(io_handle);
+    if(!closed.ok()) {
+        warn("Failed to close file handle: %", closed.unwrap_err());
+    }
+}
+
+} // namespace
 
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path) noexcept {
 
@@ -53,7 +67,7 @@ namespace spp::Files {
     LARGE_INTEGER full_size;
     if(GetFileSizeEx(handle, &full_size) == FALSE) {
         warn("Failed to size file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<Vec<u8, Alloc>>::err("size_failed"_v);
     }
 
@@ -65,11 +79,11 @@ namespace spp::Files {
 
     if(ReadFile(handle, data.data(), static_cast<u32>(size), null, null) == FALSE) {
         warn("Failed to read file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<Vec<u8, Alloc>>::err("read_failed"_v);
     }
 
-    CloseHandle(handle);
+    close_native_handle(handle);
 
     return File_Result<Vec<u8, Alloc>>::ok(spp::move(data));
 }
@@ -93,11 +107,11 @@ namespace spp::Files {
 
     if(WriteFile(handle, data.data(), static_cast<u32>(data.length()), null, null) == FALSE) {
         warn("Failed to write file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<u64>::err("write_failed"_v);
     }
 
-    CloseHandle(handle);
+    close_native_handle(handle);
     return File_Result<u64>::ok(data.length());
 }
 
@@ -119,7 +133,7 @@ namespace spp::Files {
     pos.QuadPart = static_cast<LONGLONG>(offset);
     if(SetFilePointerEx(handle, pos, null, FILE_BEGIN) == FALSE) {
         warn("Failed to seek file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<u64>::err("seek_failed"_v);
     }
 
@@ -127,11 +141,11 @@ namespace spp::Files {
     DWORD read_bytes = 0;
     if(ReadFile(handle, out.data(), static_cast<u32>(out.length()), &read_bytes, null) == FALSE) {
         warn("Failed to pread file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<u64>::err("pread_failed"_v);
     }
 
-    CloseHandle(handle);
+    close_native_handle(handle);
     return File_Result<u64>::ok(static_cast<u64>(read_bytes));
 }
 
@@ -154,7 +168,7 @@ namespace spp::Files {
     pos.QuadPart = static_cast<LONGLONG>(offset);
     if(SetFilePointerEx(handle, pos, null, FILE_BEGIN) == FALSE) {
         warn("Failed to seek file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<u64>::err("seek_failed"_v);
     }
 
@@ -162,11 +176,11 @@ namespace spp::Files {
     DWORD written = 0;
     if(WriteFile(handle, data.data(), static_cast<u32>(data.length()), &written, null) == FALSE) {
         warn("Failed to pwrite file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<u64>::err("pwrite_failed"_v);
     }
 
-    CloseHandle(handle);
+    close_native_handle(handle);
     return File_Result<u64>::ok(static_cast<u64>(written));
 }
 
@@ -222,16 +236,16 @@ namespace spp::Files {
     pos.QuadPart = static_cast<LONGLONG>(size);
     if(SetFilePointerEx(handle, pos, null, FILE_BEGIN) == FALSE) {
         warn("Failed to seek file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<u64>::err("seek_failed"_v);
     }
     if(SetEndOfFile(handle) == FALSE) {
         warn("Failed to truncate file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<u64>::err("truncate_failed"_v);
     }
 
-    CloseHandle(handle);
+    close_native_handle(handle);
     return File_Result<u64>::ok(spp::move(size));
 }
 
@@ -251,11 +265,11 @@ namespace spp::Files {
 
     if(FlushFileBuffers(handle) == FALSE) {
         warn("Failed to fsync file %: %", path, Log::sys_error());
-        CloseHandle(handle);
+        close_native_handle(handle);
         return File_Result<u64>::err("fsync_failed"_v);
     }
 
-    CloseHandle(handle);
+    close_native_handle(handle);
     return File_Result<u64>::ok(0);
 }
 
@@ -360,7 +374,7 @@ namespace spp::Files {
         warn("Failed to acquire lock %: %", lock_path, Log::sys_error());
         return File_Result<u64>::err("lock_failed"_v);
     }
-    CloseHandle(handle);
+    close_native_handle(handle);
     return File_Result<u64>::ok(0);
 }
 
@@ -399,7 +413,7 @@ namespace spp::Files {
     LARGE_INTEGER current_size = {};
     if(GetFileSizeEx(file, &current_size) == FALSE) {
         warn("Failed to size mmap file %: %", path, Log::sys_error());
-        CloseHandle(file);
+        close_native_handle(file);
         return File_Result<Mapped_File>::err("size_failed"_v);
     }
 
@@ -409,18 +423,18 @@ namespace spp::Files {
         new_size.QuadPart = static_cast<LONGLONG>(size);
         if(SetFilePointerEx(file, new_size, null, FILE_BEGIN) == FALSE || SetEndOfFile(file) == FALSE) {
             warn("Failed to extend mmap file %: %", path, Log::sys_error());
-            CloseHandle(file);
+            close_native_handle(file);
             return File_Result<Mapped_File>::err("truncate_failed"_v);
         }
     }
     if(map_len == 0) {
-        CloseHandle(file);
+        close_native_handle(file);
         return File_Result<Mapped_File>::err("map_empty"_v);
     }
 
     HANDLE mapping = CreateFileMappingW(file, null, PAGE_READWRITE, static_cast<DWORD>(map_len >> 32),
                                         static_cast<DWORD>(map_len & 0xffffffffull), null);
-    CloseHandle(file);
+    close_native_handle(file);
     if(mapping == null) {
         warn("Failed to create file mapping %: %", path, Log::sys_error());
         return File_Result<Mapped_File>::err("mmap_failed"_v);
@@ -430,7 +444,7 @@ namespace spp::Files {
                                static_cast<SIZE_T>(map_len));
     if(view == null) {
         warn("Failed to map view file %: %", path, Log::sys_error());
-        CloseHandle(mapping);
+        close_native_handle(mapping);
         return File_Result<Mapped_File>::err("mmap_failed"_v);
     }
 
@@ -468,7 +482,7 @@ namespace spp::Files {
         return File_Result<u64>::err("munmap_failed"_v);
     }
     if(mapped.handle0 != 0) {
-        CloseHandle(reinterpret_cast<HANDLE>(mapped.handle0));
+        close_native_handle(reinterpret_cast<HANDLE>(mapped.handle0));
     }
     u64 len = mapped.length;
     mapped.data = null;

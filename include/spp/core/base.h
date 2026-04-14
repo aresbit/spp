@@ -159,6 +159,8 @@ void keep_alive() noexcept;
 
 #include <spp/core/opt.h>
 
+#include <spp/core/deterministic.h>
+
 #include <spp/containers/slice.h>
 
 #include <spp/containers/array.h>
@@ -183,4 +185,10 @@ void keep_alive() noexcept;
 
 #include <spp/reflection/json.h>
 
+#include <spp/reflection/binary.h>
+
 #include <spp/concurrency/concurrent.h>
+
+#include <spp/concurrency/lockfree_ring.h>
+
+#include <spp/concurrency/message_bus.h>

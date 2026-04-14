@@ -78,10 +78,11 @@ Address::Address(u16 port) noexcept {
 
 Udp::Udp() noexcept {
 
-    socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    SOCKET socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if(socket == INVALID_SOCKET) {
         die("Failed to open socket: %", wsa_error());
     }
+    handle_ = IO::socket_handle(static_cast<uptr>(socket));
 
     u_long imode = 1;
     if(ioctlsocket(socket, FIONBIO, &imode) != NO_ERROR) {
@@ -90,24 +91,24 @@ Udp::Udp() noexcept {
 }
 
 Udp::~Udp() noexcept {
-    if(socket != INVALID_SOCKET) {
-        closesocket(socket);
-    }
-    socket = INVALID_SOCKET;
+    static_cast<void>(IO::close_result(handle_));
 }
 
 Udp::Udp(Udp&& src) noexcept {
-    socket = src.socket;
-    src.socket = INVALID_SOCKET;
+    handle_ = src.handle_;
+    src.handle_.invalidate();
 }
 
 Udp& Udp::operator=(Udp&& src) noexcept {
-    socket = src.socket;
-    src.socket = INVALID_SOCKET;
+    if(this == &src) return *this;
+    static_cast<void>(IO::close_result(handle_));
+    handle_ = src.handle_;
+    src.handle_.invalidate();
     return *this;
 }
 
 void Udp::bind(Address address) noexcept {
+    SOCKET socket = static_cast<SOCKET>(handle_.native);
 
     if(::bind(socket, reinterpret_cast<SOCKADDR*>(address.sockaddr_storage), sizeof(sockaddr_in)) ==
        SOCKET_ERROR) {
@@ -118,6 +119,7 @@ void Udp::bind(Address address) noexcept {
 [[nodiscard]] Result<Udp::Data, String_View> Udp::recv_result(Packet& in) noexcept {
 
     sockaddr_in src;
+    SOCKET socket = static_cast<SOCKET>(handle_.native);
 
     i32 src_len = sizeof(src);
     i32 ret = recvfrom(socket, reinterpret_cast<char*>(in.data()), static_cast<i32>(in.length()), 0,
@@ -140,6 +142,7 @@ void Udp::bind(Address address) noexcept {
 }
 
 [[nodiscard]] u64 Udp::send(Address address, const Packet& out, u64 length) noexcept {
+    SOCKET socket = static_cast<SOCKET>(handle_.native);
 
     i32 ret =
         sendto(socket, reinterpret_cast<const char*>(out.data()), static_cast<i32>(length), 0,
