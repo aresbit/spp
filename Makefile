@@ -44,7 +44,7 @@ TEST_SRCS := $(shell find tests -type f -name '*.cpp' | sort)
 TEST_BINS := $(patsubst tests/%.cpp,$(BIN_DIR)/tests/%,$(TEST_SRCS))
 TEST_RELS := $(patsubst tests/%.cpp,%,$(TEST_SRCS))
 
-.PHONY: all lib smoke test bench-check format clean print-config
+.PHONY: all lib smoke test bench-check bench-check-async bench-check-containers bench-check-io format clean print-config
 
 all: lib
 
@@ -66,6 +66,15 @@ test: $(TEST_BINS)
 
 bench-check:
 	./tools/bench_check.sh
+
+bench-check-async:
+	./tools/bench_check.sh --cases async_pool
+
+bench-check-containers:
+	./tools/bench_check.sh --cases concurrency_map_vec
+
+bench-check-io:
+	./tools/bench_check.sh --cases io_files,io_lock,io_net
 
 $(LIB): $(OBJS)
 	@mkdir -p $(LIB_DIR)

@@ -9,6 +9,8 @@ MAX_RSS_REGRESS_PCT_DEFAULT="50"
 MAX_ELAPSED_REGRESS_ABS_SEC_DEFAULT="0.02"
 MAX_RSS_REGRESS_ABS_KB_DEFAULT="512"
 CURRENT_OUT=""
+CASES=""
+STRICT_ALL=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,9 +22,18 @@ while [[ $# -gt 0 ]]; do
       CURRENT_OUT="$2"
       shift 2
       ;;
+    --cases)
+      if [[ -z "${2:-}" ]]; then
+        echo "error: --cases requires a comma-separated list" >&2
+        exit 1
+      fi
+      CASES="$2"
+      STRICT_ALL=0
+      shift 2
+      ;;
     *)
       echo "error: unknown argument: $1" >&2
-      echo "usage: $0 [--current-out <path>]" >&2
+      echo "usage: $0 [--current-out <path>] [--cases <comma-separated>]" >&2
       exit 1
       ;;
   esac
@@ -41,7 +52,11 @@ fi
 CURRENT_FILE="$(mktemp)"
 trap 'rm -f "$CURRENT_FILE"' EXIT
 
-"$ROOT_DIR/tools/bench_baseline.sh" --out "$CURRENT_FILE" >/dev/null
+if [[ -n "$CASES" ]]; then
+  "$ROOT_DIR/tools/bench_baseline.sh" --out "$CURRENT_FILE" --cases "$CASES" >/dev/null
+else
+  "$ROOT_DIR/tools/bench_baseline.sh" --out "$CURRENT_FILE" >/dev/null
+fi
 
 if [[ -n "$CURRENT_OUT" ]]; then
   mkdir -p "$(dirname "$CURRENT_OUT")"
@@ -55,7 +70,8 @@ awk -F '\t' \
   -v default_elapsed="$MAX_ELAPSED_REGRESS_PCT_DEFAULT" \
   -v default_rss="$MAX_RSS_REGRESS_PCT_DEFAULT" \
   -v default_elapsed_abs="$MAX_ELAPSED_REGRESS_ABS_SEC_DEFAULT" \
-  -v default_rss_abs="$MAX_RSS_REGRESS_ABS_KB_DEFAULT" '
+  -v default_rss_abs="$MAX_RSS_REGRESS_ABS_KB_DEFAULT" \
+  -v strict_all="$STRICT_ALL" '
 function fail(msg) {
   print "error: " msg > "/dev/stderr"
   failed = 1
@@ -92,6 +108,7 @@ FILENAME == ARGV[3] {
   curr_elapsed = $2 + 0.0
   curr_rss = $3 + 0.0
   seen_current[case_name] = 1
+  current_count += 1
 
   if (!(case_name in base_elapsed)) {
     fail("case " case_name " exists in current run but not in baseline")
@@ -125,10 +142,15 @@ FILENAME == ARGV[3] {
 }
 
 END {
-  for (c in seen_base) {
-    if (!(c in seen_current)) {
-      fail("case " c " exists in baseline but not in current run")
+  if (strict_all == 1) {
+    for (c in seen_base) {
+      if (!(c in seen_current)) {
+        fail("case " c " exists in baseline but not in current run")
+      }
     }
+  }
+  if (current_count == 0) {
+    fail("no benchmark cases selected")
   }
   exit failed ? 1 : 0
 }

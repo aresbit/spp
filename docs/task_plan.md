@@ -154,7 +154,7 @@ Scope baseline: `docs/spp_design.md`
 
 ## Planned Next Feat Commits (In Order)
 1. `chore`: add baseline update checklist for bench drift management.
-2. `chore`: split CI bench jobs by case group for clearer regression ownership.
+2. `chore`: add explicit benchmark case ownership metadata in task plan.
 
 ## Immediate Next Step
 1. Document baseline update review checklist in docs.
