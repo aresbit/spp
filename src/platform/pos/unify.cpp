@@ -9,5 +9,6 @@
 #include "asyncio_pos.cpp"
 #endif
 #include "files_pos.cpp"
+#include "io_pos.cpp"
 #include "net_pos.cpp"
 #include "thread_pos.cpp"
