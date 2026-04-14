@@ -148,7 +148,7 @@ void Event::reset() const noexcept {
             die("Failed to wait on single event: %", Log::sys_error());
         }
         if(wait_ret == 0) return Opt<u64>{};
-        return Opt<u64>{0};
+        return Opt<u64>{u64{0}};
     }
 
     int epfd = epoll_create1(EPOLL_CLOEXEC);

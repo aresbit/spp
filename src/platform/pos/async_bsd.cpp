@@ -141,7 +141,7 @@ void Event::reset() const noexcept {
             die("Failed to wait on single event: %", Log::sys_error());
         }
         if(ret == 0) return Opt<u64>{};
-        return Opt<u64>{0};
+        return Opt<u64>{u64{0}};
     }
 
     int kq = kqueue();
