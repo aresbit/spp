@@ -44,6 +44,13 @@ TEST_SRCS := $(shell find tests -type f -name '*.cpp' | sort)
 TEST_BINS := $(patsubst tests/%.cpp,$(BIN_DIR)/tests/%,$(TEST_SRCS))
 TEST_RELS := $(patsubst tests/%.cpp,%,$(TEST_SRCS))
 
+# Unity build dependency tracking:
+# Rebuild unity translation units when any included source/header changes.
+CORE_UNITY_DEPS := $(shell find src include -type f \( -name '*.cpp' -o -name '*.h' \) \
+	-not -path 'src/platform/*' | sort)
+POS_UNITY_DEPS := $(shell find src/platform/pos include -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+W32_UNITY_DEPS := $(shell find src/platform/w32 include -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+
 .PHONY: all lib smoke test bench-check bench-check-async bench-check-containers bench-check-io format clean print-config
 
 all: lib
@@ -83,6 +90,10 @@ $(LIB): $(OBJS)
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/src/core/unify.o: $(CORE_UNITY_DEPS)
+$(OBJ_DIR)/src/platform/pos/unify.o: $(POS_UNITY_DEPS)
+$(OBJ_DIR)/src/platform/w32/unify.o: $(W32_UNITY_DEPS)
 
 $(SMOKE_BIN): $(SMOKE_SRC) $(LIB)
 	@mkdir -p $(BIN_DIR)
