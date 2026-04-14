@@ -248,6 +248,60 @@ i32 main() {
             assert(removed.ok());
         }
         {
+            String_View kPath = "async_pool_io_positional.tmp"_v;
+            auto existed = Files::exists_result(kPath);
+            assert(existed.ok());
+            if(existed.unwrap()) {
+                auto removed_existing = Files::remove_result(kPath);
+                assert(removed_existing.ok());
+            }
+
+            Array<u8, 32> init{};
+            auto wrote_seed = Async::write_result(pool, kPath, init.slice()).block();
+            assert(wrote_seed.ok());
+            assert(wrote_seed.unwrap() == init.length());
+
+            Array<u8, 2> a{u8{'A'}, u8{'B'}};
+            Array<u8, 2> b{u8{'C'}, u8{'D'}};
+            Array<u8, 2> c{u8{'E'}, u8{'F'}};
+
+            auto wrote_one = Async::pwrite_result(pool, kPath, 2, a.slice()).block();
+            assert(wrote_one.ok());
+            assert(wrote_one.unwrap() == a.length());
+
+            Array<Files::Write_IO_Slice, 2> ws{
+                Files::Write_IO_Slice{b.data(), b.length()},
+                Files::Write_IO_Slice{c.data(), c.length()},
+            };
+            auto wrote_vec = Async::pwritev_result(pool, kPath, 4, ws.slice()).block();
+            assert(wrote_vec.ok());
+            assert(wrote_vec.unwrap() == 4);
+
+            auto synced = Async::fdatasync_result(pool, kPath).block();
+            assert(synced.ok());
+
+            Array<u8, 2> out_one{};
+            auto read_one = Async::pread_result(pool, kPath, 2, out_one.slice()).block();
+            assert(read_one.ok());
+            assert(read_one.unwrap() == out_one.length());
+            assert(out_one[0] == 'A' && out_one[1] == 'B');
+
+            Array<u8, 2> rb{};
+            Array<u8, 2> rc{};
+            Array<Files::Read_IO_Slice, 2> rs{
+                Files::Read_IO_Slice{rb.data(), rb.length()},
+                Files::Read_IO_Slice{rc.data(), rc.length()},
+            };
+            auto read_vec = Async::preadv_result(pool, kPath, 4, rs.slice()).block();
+            assert(read_vec.ok());
+            assert(read_vec.unwrap() == 4);
+            assert(rb[0] == 'C' && rb[1] == 'D');
+            assert(rc[0] == 'E' && rc[1] == 'F');
+
+            auto removed = Files::remove_result(kPath);
+            assert(removed.ok());
+        }
+        {
             Vec<Async::Event> events;
             events.push(Async::Event{});
             events.push(Async::Event{});

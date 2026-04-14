@@ -47,6 +47,18 @@ private:
                                                                             String_View path) noexcept;
 [[nodiscard]] Task<Result<u64, String_View>> write_result(Pool<>& pool, String_View path,
                                                           Slice<u8> data) noexcept;
+[[nodiscard]] Task<Result<u64, String_View>> pread_result(Pool<>& pool, String_View path,
+                                                          u64 offset, Slice<u8> out) noexcept;
+[[nodiscard]] Task<Result<u64, String_View>> pwrite_result(Pool<>& pool, String_View path,
+                                                           u64 offset,
+                                                           Slice<const u8> data) noexcept;
+[[nodiscard]] Task<Result<u64, String_View>> preadv_result(Pool<>& pool, String_View path,
+                                                           u64 offset,
+                                                           Slice<Files::Read_IO_Slice> outs) noexcept;
+[[nodiscard]] Task<Result<u64, String_View>> pwritev_result(
+    Pool<>& pool, String_View path, u64 offset, Slice<const Files::Write_IO_Slice> inputs) noexcept;
+[[nodiscard]] Task<Result<u64, String_View>> fdatasync_result(Pool<>& pool,
+                                                              String_View path) noexcept;
 
 [[nodiscard]] Task<Opt<Vec<u8, Files::Alloc>>> read(Pool<>& pool, String_View path) noexcept;
 [[nodiscard]] Task<bool> write(Pool<>& pool, String_View path, Slice<u8> data) noexcept;
