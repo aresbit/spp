@@ -344,4 +344,90 @@ namespace spp::Files {
     return File_Result<u64>::ok(0);
 }
 
+[[nodiscard]] File_Result<Mapped_File> mmap_result(String_View path, u64 size) noexcept {
+    auto [ucs2_path, ucs2_path_len] = utf8_to_ucs2(path);
+    if(ucs2_path_len == 0) {
+        warn("Failed to convert file path %!", path);
+        return File_Result<Mapped_File>::err("path_convert_failed"_v);
+    }
+
+    HANDLE file = CreateFileW(ucs2_path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, null,
+                              OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, null);
+    if(file == INVALID_HANDLE_VALUE) {
+        warn("Failed to open mmap file %: %", path, Log::sys_error());
+        return File_Result<Mapped_File>::err("open_failed"_v);
+    }
+
+    LARGE_INTEGER current_size = {};
+    if(GetFileSizeEx(file, &current_size) == FALSE) {
+        warn("Failed to size mmap file %: %", path, Log::sys_error());
+        CloseHandle(file);
+        return File_Result<Mapped_File>::err("size_failed"_v);
+    }
+
+    u64 map_len = size == 0 ? static_cast<u64>(current_size.QuadPart) : size;
+    if(size != 0 && static_cast<u64>(current_size.QuadPart) < size) {
+        LARGE_INTEGER new_size;
+        new_size.QuadPart = static_cast<LONGLONG>(size);
+        if(SetFilePointerEx(file, new_size, null, FILE_BEGIN) == FALSE || SetEndOfFile(file) == FALSE) {
+            warn("Failed to extend mmap file %: %", path, Log::sys_error());
+            CloseHandle(file);
+            return File_Result<Mapped_File>::err("truncate_failed"_v);
+        }
+    }
+    if(map_len == 0) {
+        CloseHandle(file);
+        return File_Result<Mapped_File>::err("map_empty"_v);
+    }
+
+    HANDLE mapping = CreateFileMappingW(file, null, PAGE_READWRITE, static_cast<DWORD>(map_len >> 32),
+                                        static_cast<DWORD>(map_len & 0xffffffffull), null);
+    CloseHandle(file);
+    if(mapping == null) {
+        warn("Failed to create file mapping %: %", path, Log::sys_error());
+        return File_Result<Mapped_File>::err("mmap_failed"_v);
+    }
+
+    void* view = MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0,
+                               static_cast<SIZE_T>(map_len));
+    if(view == null) {
+        warn("Failed to map view file %: %", path, Log::sys_error());
+        CloseHandle(mapping);
+        return File_Result<Mapped_File>::err("mmap_failed"_v);
+    }
+
+    Mapped_File mapped;
+    mapped.data = reinterpret_cast<u8*>(view);
+    mapped.length = map_len;
+    mapped.handle0 = reinterpret_cast<uptr>(mapping);
+    return File_Result<Mapped_File>::ok(spp::move(mapped));
+}
+
+[[nodiscard]] File_Result<u64> msync_result(const Mapped_File& mapped) noexcept {
+    if(mapped.data == null || mapped.length == 0) return File_Result<u64>::err("invalid_map"_v);
+    if(FlushViewOfFile(mapped.data, static_cast<SIZE_T>(mapped.length)) == FALSE) {
+        warn("Failed to msync mapped file: %", Log::sys_error());
+        return File_Result<u64>::err("msync_failed"_v);
+    }
+    u64 synced = mapped.length;
+    return File_Result<u64>::ok(spp::move(synced));
+}
+
+[[nodiscard]] File_Result<u64> munmap_result(Mapped_File& mapped) noexcept {
+    if(mapped.data == null || mapped.length == 0) return File_Result<u64>::err("invalid_map"_v);
+    if(UnmapViewOfFile(mapped.data) == FALSE) {
+        warn("Failed to munmap mapped file: %", Log::sys_error());
+        return File_Result<u64>::err("munmap_failed"_v);
+    }
+    if(mapped.handle0 != 0) {
+        CloseHandle(reinterpret_cast<HANDLE>(mapped.handle0));
+    }
+    u64 len = mapped.length;
+    mapped.data = null;
+    mapped.length = 0;
+    mapped.handle0 = 0;
+    mapped.handle1 = 0;
+    return File_Result<u64>::ok(spp::move(len));
+}
+
 } // namespace spp::Files

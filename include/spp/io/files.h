@@ -11,6 +11,13 @@ using File_Time = u64;
 template<typename T>
 using File_Result = Result<T, String_View>;
 
+struct Mapped_File {
+    u8* data = null;
+    u64 length = 0;
+    uptr handle0 = 0;
+    uptr handle1 = 0;
+};
+
 [[nodiscard]] File_Result<Vec<u8, Alloc>> read_result(String_View path) noexcept;
 [[nodiscard]] File_Result<u64> write_result(String_View path, Slice<const u8> data) noexcept;
 [[nodiscard]] File_Result<u64> pread_result(String_View path, u64 offset, Slice<u8> out) noexcept;
@@ -25,6 +32,9 @@ using File_Result = Result<T, String_View>;
 [[nodiscard]] File_Result<u64> rmdir_result(String_View path) noexcept;
 [[nodiscard]] File_Result<u64> acquire_lock_result(String_View lock_path) noexcept;
 [[nodiscard]] File_Result<u64> release_lock_result(String_View lock_path) noexcept;
+[[nodiscard]] File_Result<Mapped_File> mmap_result(String_View path, u64 size) noexcept;
+[[nodiscard]] File_Result<u64> msync_result(const Mapped_File& mapped) noexcept;
+[[nodiscard]] File_Result<u64> munmap_result(Mapped_File& mapped) noexcept;
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path) noexcept;
 
 [[nodiscard]] Opt<Vec<u8, Alloc>> read(String_View path) noexcept;

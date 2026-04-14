@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -231,6 +232,74 @@ namespace spp::Files {
         }
         return File_Result<u64>::ok(0);
     }
+}
+
+[[nodiscard]] File_Result<Mapped_File> mmap_result(String_View path_, u64 size) noexcept {
+    int fd = -1;
+    Region(R) {
+        auto path = path_.terminate<Mregion<R>>();
+        fd = open(reinterpret_cast<const char*>(path.data()), O_RDWR | O_CREAT, 0644);
+    }
+    if(fd == -1) {
+        warn("Failed to open mmap file %: %", path_, Log::sys_error());
+        return File_Result<Mapped_File>::err("open_failed"_v);
+    }
+
+    struct stat info;
+    if(fstat(fd, &info) == -1) {
+        warn("Failed to stat mmap file %: %", path_, Log::sys_error());
+        close(fd);
+        return File_Result<Mapped_File>::err("stat_failed"_v);
+    }
+
+    u64 map_len = size == 0 ? static_cast<u64>(info.st_size) : size;
+    if(size != 0 && static_cast<u64>(info.st_size) < size) {
+        if(ftruncate(fd, static_cast<off_t>(size)) == -1) {
+            warn("Failed to extend mmap file %: %", path_, Log::sys_error());
+            close(fd);
+            return File_Result<Mapped_File>::err("truncate_failed"_v);
+        }
+    }
+    if(map_len == 0) {
+        close(fd);
+        return File_Result<Mapped_File>::err("map_empty"_v);
+    }
+
+    void* ptr = ::mmap(null, map_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+    if(ptr == MAP_FAILED) {
+        warn("Failed to mmap file %: %", path_, Log::sys_error());
+        return File_Result<Mapped_File>::err("mmap_failed"_v);
+    }
+
+    Mapped_File mapped;
+    mapped.data = reinterpret_cast<u8*>(ptr);
+    mapped.length = map_len;
+    return File_Result<Mapped_File>::ok(spp::move(mapped));
+}
+
+[[nodiscard]] File_Result<u64> msync_result(const Mapped_File& mapped) noexcept {
+    if(mapped.data == null || mapped.length == 0) return File_Result<u64>::err("invalid_map"_v);
+    if(::msync(mapped.data, mapped.length, MS_SYNC) == -1) {
+        warn("Failed to msync mapped file: %", Log::sys_error());
+        return File_Result<u64>::err("msync_failed"_v);
+    }
+    u64 synced = mapped.length;
+    return File_Result<u64>::ok(spp::move(synced));
+}
+
+[[nodiscard]] File_Result<u64> munmap_result(Mapped_File& mapped) noexcept {
+    if(mapped.data == null || mapped.length == 0) return File_Result<u64>::err("invalid_map"_v);
+    if(::munmap(mapped.data, mapped.length) == -1) {
+        warn("Failed to munmap file: %", Log::sys_error());
+        return File_Result<u64>::err("munmap_failed"_v);
+    }
+    u64 len = mapped.length;
+    mapped.data = null;
+    mapped.length = 0;
+    mapped.handle0 = 0;
+    mapped.handle1 = 0;
+    return File_Result<u64>::ok(spp::move(len));
 }
 
 [[nodiscard]] File_Result<File_Time> last_write_time_result(String_View path_) noexcept {
