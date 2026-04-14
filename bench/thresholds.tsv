@@ -1,5 +1,5 @@
-case	max_elapsed_regress_pct	max_rss_regress_pct
-async_pool	150	60
-concurrency_map_vec	200	80
-io_files	150	60
-io_net	150	60
+case	max_elapsed_regress_pct	max_rss_regress_pct	max_elapsed_regress_abs_sec	max_rss_regress_abs_kb
+async_pool	40	20	0.05	512
+concurrency_map_vec	80	20	0.02	512
+io_files	100	20	0.02	512
+io_net	50	20	0.03	512

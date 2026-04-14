@@ -38,4 +38,8 @@ The baseline tracks one performance metric and one memory metric per case:
 - Keep machine load stable when comparing baselines.
 - Re-run `./tools/bench_baseline.sh` after major runtime/container changes and review deltas in `bench/baseline.tsv`.
 - Allowed regressions are configured in `bench/thresholds.tsv`.
+- Regression policy is dual-gated per case:
+  - percent delta threshold (`max_*_regress_pct`)
+  - absolute delta threshold (`max_*_regress_abs_*`)
+  - gate fails only when both percent and absolute thresholds are exceeded.
 - CI runs `make bench-check` and fails on threshold breach.

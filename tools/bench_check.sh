@@ -6,6 +6,8 @@ BASELINE_FILE="$ROOT_DIR/bench/baseline.tsv"
 THRESHOLDS_FILE="$ROOT_DIR/bench/thresholds.tsv"
 MAX_ELAPSED_REGRESS_PCT_DEFAULT="100"
 MAX_RSS_REGRESS_PCT_DEFAULT="50"
+MAX_ELAPSED_REGRESS_ABS_SEC_DEFAULT="0.02"
+MAX_RSS_REGRESS_ABS_KB_DEFAULT="512"
 
 if [[ -n "${1:-}" ]]; then
   echo "error: bench_check.sh does not take positional arguments" >&2
@@ -32,7 +34,9 @@ echo "thresholds: $THRESHOLDS_FILE"
 
 awk -F '\t' \
   -v default_elapsed="$MAX_ELAPSED_REGRESS_PCT_DEFAULT" \
-  -v default_rss="$MAX_RSS_REGRESS_PCT_DEFAULT" '
+  -v default_rss="$MAX_RSS_REGRESS_PCT_DEFAULT" \
+  -v default_elapsed_abs="$MAX_ELAPSED_REGRESS_ABS_SEC_DEFAULT" \
+  -v default_rss_abs="$MAX_RSS_REGRESS_ABS_KB_DEFAULT" '
 function fail(msg) {
   print "error: " msg > "/dev/stderr"
   failed = 1
@@ -58,6 +62,8 @@ FILENAME == ARGV[2] {
   if ($1 == "case") next
   th_elapsed[$1] = $2 + 0.0
   th_rss[$1] = $3 + 0.0
+  th_elapsed_abs[$1] = ($4 == "" ? default_elapsed_abs + 0.0 : $4 + 0.0)
+  th_rss_abs[$1] = ($5 == "" ? default_rss_abs + 0.0 : $5 + 0.0)
   next
 }
 
@@ -77,18 +83,26 @@ FILENAME == ARGV[3] {
   base_m = base_rss[case_name]
   d_e = pct_delta(base_e, curr_elapsed)
   d_m = pct_delta(base_m, curr_rss)
+  d_e_abs = curr_elapsed - base_e
+  d_m_abs = curr_rss - base_m
 
   max_e = (case_name in th_elapsed) ? th_elapsed[case_name] : default_elapsed
   max_m = (case_name in th_rss) ? th_rss[case_name] : default_rss
+  max_e_abs = (case_name in th_elapsed_abs) ? th_elapsed_abs[case_name] : default_elapsed_abs
+  max_m_abs = (case_name in th_rss_abs) ? th_rss_abs[case_name] : default_rss_abs
 
   status = "PASS"
-  if (d_e > max_e || d_m > max_m) {
+  elapsed_regress = (d_e > max_e && d_e_abs > max_e_abs)
+  rss_regress = (d_m > max_m && d_m_abs > max_m_abs)
+
+  if (elapsed_regress || rss_regress) {
     status = "FAIL"
-    fail(sprintf("case %s regressed: elapsed %+0.2f%% (max %+0.2f%%), rss %+0.2f%% (max %+0.2f%%)", case_name, d_e, max_e, d_m, max_m))
+    fail(sprintf("case %s regressed: elapsed %+0.2f%% / %+0.4fs (max %+0.2f%% or %+0.4fs), rss %+0.2f%% / %+0.0fKB (max %+0.2f%% or %+0.0fKB)",
+      case_name, d_e, d_e_abs, max_e, max_e_abs, d_m, d_m_abs, max_m, max_m_abs))
   }
 
-  printf "%-20s elapsed: %8.4fs -> %8.4fs (%+7.2f%%, max %+6.2f%%) | rss: %7.0fKB -> %7.0fKB (%+7.2f%%, max %+6.2f%%) [%s]\n",
-    case_name, base_e, curr_elapsed, d_e, max_e, base_m, curr_rss, d_m, max_m, status
+  printf "%-20s elapsed: %8.4fs -> %8.4fs (%+7.2f%%, %+8.4fs; max %+6.2f%% or %+8.4fs) | rss: %7.0fKB -> %7.0fKB (%+7.2f%%, %+7.0fKB; max %+6.2f%% or %+7.0fKB) [%s]\n",
+    case_name, base_e, curr_elapsed, d_e, d_e_abs, max_e, max_e_abs, base_m, curr_rss, d_m, d_m_abs, max_m, max_m_abs, status
 }
 
 END {

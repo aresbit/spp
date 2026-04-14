@@ -153,9 +153,9 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Planned Next Feat Commits (In Order)
-1. `chore`: tighten per-case threshold policy after io/net baselines.
-2. `chore`: add benchmark trend artifact export for CI diffs.
+1. `chore`: add benchmark trend artifact export for CI diffs.
+2. `chore`: refine benchmark case representativeness for async/io hot paths.
 
 ## Immediate Next Step
-1. Tune per-case threshold values from observed CI variance.
-2. Add CI artifact upload for current bench run table.
+1. Add CI artifact upload for current bench run table.
+2. Define trend comparison format for baseline update review.
