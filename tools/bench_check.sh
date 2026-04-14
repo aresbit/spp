@@ -8,11 +8,25 @@ MAX_ELAPSED_REGRESS_PCT_DEFAULT="100"
 MAX_RSS_REGRESS_PCT_DEFAULT="50"
 MAX_ELAPSED_REGRESS_ABS_SEC_DEFAULT="0.02"
 MAX_RSS_REGRESS_ABS_KB_DEFAULT="512"
+CURRENT_OUT=""
 
-if [[ -n "${1:-}" ]]; then
-  echo "error: bench_check.sh does not take positional arguments" >&2
-  exit 1
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --current-out)
+      if [[ -z "${2:-}" ]]; then
+        echo "error: --current-out requires a file path" >&2
+        exit 1
+      fi
+      CURRENT_OUT="$2"
+      shift 2
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      echo "usage: $0 [--current-out <path>]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 if [[ ! -f "$BASELINE_FILE" ]]; then
   echo "error: missing baseline file: $BASELINE_FILE" >&2
@@ -28,6 +42,11 @@ CURRENT_FILE="$(mktemp)"
 trap 'rm -f "$CURRENT_FILE"' EXIT
 
 "$ROOT_DIR/tools/bench_baseline.sh" --out "$CURRENT_FILE" >/dev/null
+
+if [[ -n "$CURRENT_OUT" ]]; then
+  mkdir -p "$(dirname "$CURRENT_OUT")"
+  cp "$CURRENT_FILE" "$CURRENT_OUT"
+fi
 
 echo "bench check against baseline: $BASELINE_FILE"
 echo "thresholds: $THRESHOLDS_FILE"

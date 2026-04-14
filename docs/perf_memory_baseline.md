@@ -18,6 +18,12 @@ To run the regression gate against baseline:
 ./tools/bench_check.sh
 ```
 
+To export current run metrics while checking:
+
+```bash
+./tools/bench_check.sh --current-out bench/current.tsv
+```
+
 ## Metrics
 
 The baseline tracks one performance metric and one memory metric per case:
@@ -43,3 +49,4 @@ The baseline tracks one performance metric and one memory metric per case:
   - absolute delta threshold (`max_*_regress_abs_*`)
   - gate fails only when both percent and absolute thresholds are exceeded.
 - CI runs `make bench-check` and fails on threshold breach.
+- CI uploads `bench/current.tsv` as artifact `bench-current` for diff review.

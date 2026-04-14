@@ -153,9 +153,9 @@ Scope baseline: `docs/spp_design.md`
 - `4f3cab2` bootstrap spp from rpp and integrate tests into make
 
 ## Planned Next Feat Commits (In Order)
-1. `chore`: add benchmark trend artifact export for CI diffs.
-2. `chore`: refine benchmark case representativeness for async/io hot paths.
+1. `chore`: refine benchmark case representativeness for async/io hot paths.
+2. `chore`: add baseline update checklist for bench drift management.
 
 ## Immediate Next Step
-1. Add CI artifact upload for current bench run table.
-2. Define trend comparison format for baseline update review.
+1. Add an async IO combined micro-case to baseline suite.
+2. Document baseline update review checklist in docs.
