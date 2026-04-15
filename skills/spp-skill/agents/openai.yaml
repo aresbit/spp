@@ -1,0 +1,4 @@
+interface:
+  display_name: "SPP App Builder"
+  short_description: "Build apps on top of SPP safely."
+  default_prompt: "Use $spp-skill to scaffold and implement an external project using SPP APIs, then verify it with make test."
