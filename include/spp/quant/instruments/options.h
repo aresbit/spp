@@ -1,6 +1,7 @@
 #pragma once
 
 #include <spp/core/base.h>
+#include <spp/core/variant.h>
 #include <spp/quant/instruments/instrument.h>
 #include <spp/quant/base/date.h>
 
@@ -31,11 +32,7 @@ struct EuropeanOption : Instrument {
             return Math::max(strike_ - spot, 0.0);
     }
 
-    SPP_RECORD(EuropeanOption,
-        SPP_FIELD(type_),
-        SPP_FIELD(strike_),
-        SPP_FIELD(expiry_),
-        SPP_FIELD(underlying_spot_));
+    // Reflection metadata declared externally via SPP_NAMED_RECORD below.
 };
 
 // =========================================================================
@@ -60,11 +57,7 @@ struct AmericanOption : Instrument {
             return Math::max(strike_ - spot, 0.0);
     }
 
-    SPP_RECORD(AmericanOption,
-        SPP_FIELD(type_),
-        SPP_FIELD(strike_),
-        SPP_FIELD(expiry_),
-        SPP_FIELD(underlying_spot_));
+    // Reflection metadata declared externally via SPP_NAMED_RECORD below.
 };
 
 // =========================================================================
@@ -91,13 +84,7 @@ struct BarrierOption : Instrument {
         return Date::today() >= expiry_;
     }
 
-    SPP_RECORD(BarrierOption,
-        SPP_FIELD(type_),
-        SPP_FIELD(strike_),
-        SPP_FIELD(barrier_),
-        SPP_FIELD(barrier_type_),
-        SPP_FIELD(expiry_),
-        SPP_FIELD(underlying_spot_));
+    // Reflection metadata declared externally via SPP_NAMED_RECORD below.
 };
 
 // =========================================================================
@@ -121,12 +108,7 @@ struct AsianOption : Instrument {
         return Date::today() >= expiry_;
     }
 
-    SPP_RECORD(AsianOption,
-        SPP_FIELD(type_),
-        SPP_FIELD(strike_),
-        SPP_FIELD(expiry_),
-        SPP_FIELD(avg_type_),
-        SPP_FIELD(underlying_spot_));
+    // Reflection metadata declared externally via SPP_NAMED_RECORD below.
 };
 
 // =========================================================================
@@ -145,12 +127,7 @@ struct DigitalOption : Instrument {
         return Date::today() >= expiry_;
     }
 
-    SPP_RECORD(DigitalOption,
-        SPP_FIELD(type_),
-        SPP_FIELD(strike_),
-        SPP_FIELD(cash_rebate_),
-        SPP_FIELD(expiry_),
-        SPP_FIELD(underlying_spot_));
+    // Reflection metadata declared externally via SPP_NAMED_RECORD below.
 };
 
 // =========================================================================

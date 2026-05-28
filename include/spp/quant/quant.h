@@ -28,6 +28,7 @@
 // ---- Data -----------------------------------------------------------------
 #include "spp/quant/data/timeseries.h"
 #include "spp/quant/data/market_data.h"
+#include "spp/quant/data/connector.h"
 
 // ---- Risk ----------------------------------------------------------------
 #include "spp/quant/risk/greeks.h"
@@ -82,3 +83,4 @@
 // ---- Execution -----------------------------------------------------------
 #include "spp/quant/execution/order.h"
 #include "spp/quant/execution/algo.h"
+#include "spp/quant/execution/fix_gateway.h"

@@ -13,13 +13,6 @@ struct Greeks {
     f64 theta = 0.0;
     f64 vega  = 0.0;
     f64 rho   = 0.0;
-
-    SPP_RECORD(Greeks,
-        SPP_FIELD(delta),
-        SPP_FIELD(gamma),
-        SPP_FIELD(theta),
-        SPP_FIELD(vega),
-        SPP_FIELD(rho));
 };
 
 // =========================================================================

@@ -36,7 +36,7 @@ struct BlackScholes {
             else               { d1 = -1e15; d2 = -1e15; }
             return;
         }
-        d1 = (Math::log(spot / strike) + (r - q + 0.5 * vol * vol) * t) / vt;
+        d1 = (::log(spot / strike) + (r - q + 0.5 * vol * vol) * t) / vt;
         d2 = d1 - vt;
     }
 
@@ -254,14 +254,14 @@ struct BlackScholes {
         f64 h_over_s = barrier / spot;
 
         // x1, x2
-        f64 x1 = Math::log(spot / strike) / vt + (1.0 + mu) * vt;
-        f64 x2 = Math::log(spot / barrier) / vt + (1.0 + mu) * vt;
+        f64 x1 = ::log(spot / strike) / vt + (1.0 + mu) * vt;
+        f64 x2 = ::log(spot / barrier) / vt + (1.0 + mu) * vt;
         // y1, y2
-        f64 y1 = Math::log((barrier * barrier) / (spot * strike)) / vt +
+        f64 y1 = ::log((barrier * barrier) / (spot * strike)) / vt +
                  (1.0 + mu) * vt;
-        f64 y2 = Math::log(barrier / spot) / vt + (1.0 + mu) * vt;
+        f64 y2 = ::log(barrier / spot) / vt + (1.0 + mu) * vt;
         // z
-        f64 z  = Math::log(barrier / spot) / vt + lambda * vt;
+        f64 z  = ::log(barrier / spot) / vt + lambda * vt;
 
         // Building blocks A through F
         auto N = [](f64 x) { return dist::normal_cdf(x); };
@@ -397,7 +397,7 @@ struct BlackScholes {
             if (type == OptionType::Call) return Math::max(forward - strike, 0.0);
             else                          return Math::max(strike - forward, 0.0);
         }
-        f64 d1  = (Math::log(forward / strike) + 0.5 * vol * vol * t) / vt;
+        f64 d1  = (::log(forward / strike) + 0.5 * vol * vol * t) / vt;
         f64 d2  = d1 - vt;
         f64 df  = Math::exp(-r * t);
 
@@ -427,7 +427,7 @@ private:
         // When discount_curve_ is fully wired, compute:
         // Date d = mkt.as_of_ + static_cast<i32>(t * 365.0);
         // f64 df = mkt.discount(d);
-        // return -Math::log(Math::max(df, 1e-15)) / t;
+        // return -::log(Math::max(df, 1e-15)) / t;
         return 0.0;
     }
 };

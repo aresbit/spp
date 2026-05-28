@@ -93,43 +93,43 @@ struct MarketDataBuilder {
         return *this;
     }
     MarketDataBuilder& with_discount_curve(YieldCurve* yc) noexcept {
-        md_.discount_curve_ = yc;
+        md_.discount_curve_.emplace(yc);
         return *this;
     }
     MarketDataBuilder& with_projection_curve(YieldCurve* yc) noexcept {
-        md_.projection_curve_ = yc;
+        md_.projection_curve_.emplace(yc);
         return *this;
     }
     MarketDataBuilder& with_vol_surface(VolSurface* vs) noexcept {
-        md_.vol_surface_ = vs;
+        md_.vol_surface_.emplace(vs);
         return *this;
     }
     MarketDataBuilder& with_spot(f64 s) noexcept {
-        md_.spot_price_ = s;
+        md_.spot_price_.emplace(s);
         return *this;
     }
     MarketDataBuilder& with_dividend_yield(f64 q) noexcept {
-        md_.dividend_yield_ = q;
+        md_.dividend_yield_.emplace(q);
         return *this;
     }
     MarketDataBuilder& with_repo_rate(f64 r) noexcept {
-        md_.repo_rate_ = r;
+        md_.repo_rate_.emplace(r);
         return *this;
     }
     MarketDataBuilder& with_foreign_discount_curve(YieldCurve* yc) noexcept {
-        md_.foreign_discount_curve_ = yc;
+        md_.foreign_discount_curve_.emplace(yc);
         return *this;
     }
     MarketDataBuilder& with_fx_spot(f64 fx) noexcept {
-        md_.fx_spot_ = fx;
+        md_.fx_spot_.emplace(fx);
         return *this;
     }
     MarketDataBuilder& with_credit_curve(YieldCurve* cc) noexcept {
-        md_.credit_curve_ = cc;
+        md_.credit_curve_.emplace(cc);
         return *this;
     }
     MarketDataBuilder& with_recovery_rate(f64 rr) noexcept {
-        md_.recovery_rate_ = rr;
+        md_.recovery_rate_.emplace(rr);
         return *this;
     }
 
