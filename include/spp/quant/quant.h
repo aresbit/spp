@@ -84,3 +84,9 @@
 #include "spp/quant/execution/order.h"
 #include "spp/quant/execution/algo.h"
 #include "spp/quant/execution/fix_gateway.h"
+
+// ---- Monitoring -----------------------------------------------------------
+#include "spp/quant/monitoring/alert.h"
+#include "spp/quant/monitoring/ntp_clock.h"
+#include "spp/quant/monitoring/watchdog.h"
+#include "spp/quant/monitoring/alert_wiring.h"
