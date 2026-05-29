@@ -4,101 +4,22 @@
 #error "Include spp/core/base.h before quant headers."
 #endif
 
+#include "spp/quant/core/types.h"      // unified event types
 #include "spp/quant/base/date.h"
 #include "spp/quant/portfolio/position.h"
 
 namespace spp::quant {
 
 // =========================================================================
-// Event types for strategy framework
-//
-// These are the minimal event types needed by the strategy layer.
-// They mirror what backtest/event.h will eventually provide, but are
-// defined here to keep the strategy framework self-contained.
-// =========================================================================
-
-/// Direction of a signal or trade
-enum struct SignalDirection : u8 {
-    Flat = 0,
-    Buy  = 1,
-    Sell = 2
-};
-
-/// Side of an order
-enum struct OrderSide : u8 {
-    Buy  = 1,
-    Sell = 2
-};
-
-/// Market data event — one bar or tick arriving
-struct MarketEvent {
-    String_View instrument_id_  = ""_v;
-    f64         open_           = 0.0;
-    f64         high_           = 0.0;
-    f64         low_            = 0.0;
-    f64         close_          = 0.0;
-    f64         volume_         = 0.0;
-    f64         vwap_           = 0.0;
-    Date        timestamp_      = Date{};
-
-    /// Convenience: close price (most common use-case for signals)
-    [[nodiscard]] f64 price() const noexcept { return close_; }
-
-    SPP_RECORD(MarketEvent, SPP_FIELD(instrument_id_), SPP_FIELD(open_),
-               SPP_FIELD(high_), SPP_FIELD(low_), SPP_FIELD(close_),
-               SPP_FIELD(volume_), SPP_FIELD(vwap_), SPP_FIELD(timestamp_));
-};
-
-/// Signal event — a trading signal produced by a strategy
-struct SignalEvent {
-    String_View      instrument_id_ = ""_v;
-    SignalDirection  direction_     = SignalDirection::Flat;
-    f64              strength_      = 0.0;   ///< normalized [-1, 1]
-    f64              confidence_    = 0.0;   ///< [0, 1]
-    String_View      reason_        = ""_v;  ///< human-readable reason
-    Date             timestamp_     = Date{};
-
-    SPP_RECORD(SignalEvent, SPP_FIELD(instrument_id_), SPP_FIELD(direction_),
-               SPP_FIELD(strength_), SPP_FIELD(confidence_), SPP_FIELD(reason_),
-               SPP_FIELD(timestamp_));
-};
-
-/// Order event — an order to be sent to the market
-struct OrderEvent {
-    String_View instrument_id_ = ""_v;
-    OrderSide   side_          = OrderSide::Buy;
-    f64         quantity_      = 0.0;
-    f64         limit_price_   = 0.0;    ///< 0.0 = market order
-    String_View strategy_id_   = ""_v;
-    Date        timestamp_     = Date{};
-
-    SPP_RECORD(OrderEvent, SPP_FIELD(instrument_id_), SPP_FIELD(side_),
-               SPP_FIELD(quantity_), SPP_FIELD(limit_price_),
-               SPP_FIELD(strategy_id_), SPP_FIELD(timestamp_));
-};
-
-/// Fill event — notification that an order was executed
-struct FillEvent {
-    String_View instrument_id_ = ""_v;
-    OrderSide   side_          = OrderSide::Buy;
-    f64         quantity_      = 0.0;
-    f64         fill_price_    = 0.0;
-    f64         commission_    = 0.0;
-    String_View order_id_      = ""_v;
-    Date        timestamp_     = Date{};
-
-    [[nodiscard]] f64 signed_quantity() const noexcept {
-        return (side_ == OrderSide::Buy) ? quantity_ : -quantity_;
-    }
-
-    SPP_RECORD(FillEvent, SPP_FIELD(instrument_id_), SPP_FIELD(side_),
-               SPP_FIELD(quantity_), SPP_FIELD(fill_price_),
-               SPP_FIELD(commission_), SPP_FIELD(order_id_),
-               SPP_FIELD(timestamp_));
-};
-
-// =========================================================================
 // Strategy — abstract base class for all trading strategies
+//
+// Event types (MarketEvent, SignalEvent, OrderEvent, FillEvent) are the
+// unified definitions from core/types.h.  Field names:
+//   symbol_    (was instrument_id_)
+//   date_      (was timestamp_)
+//   price_     (was limit_price_ / fill_price_)
+//
+// SignalDirection uses: Short / Flat / Long  (was Sell / Flat / Buy)
 // =========================================================================
 
 struct Strategy {
@@ -141,7 +62,6 @@ struct Strategy {
     /// Total current exposure (sum of |qty * price| across all positions).
     /// Requires external price data; returns 0.0 without it.
     [[nodiscard]] f64 current_exposure() const noexcept {
-        // Use entry prices as best available estimate.
         f64 exp = 0.0;
         for (u64 i = 0; i < positions_.size(); i++) {
             const Position& p = positions_.positions_[i];
@@ -172,12 +92,12 @@ struct Strategy {
 //
 // Computes two simple moving averages on close prices.
 // Signal generation:
-//   - Buy  when fast_ma crosses above slow_ma (golden cross)
-//   - Sell when fast_ma crosses below slow_ma (death cross)
+//   - Long  when fast_ma crosses above slow_ma (golden cross)
+//   - Short when fast_ma crosses below slow_ma (death cross)
 //
 // Uses position tracking to avoid duplicate signals:
-//   - Only generate Buy  when currently flat/short
-//   - Only generate Sell when currently long
+//   - Only generate Long  when currently flat/short
+//   - Only generate Short when currently long
 
 struct MACrossover : Strategy {
     u64 fast_window_       = 20;
@@ -223,27 +143,25 @@ struct MACrossover : Strategy {
         bool fast_above_slow_prev = fast_ma_prev > slow_ma_prev;
 
         if (fast_above_slow_curr && !fast_above_slow_prev) {
-            // Golden cross: fast crossed above slow -> Buy
-            if (current_direction_ != SignalDirection::Buy) {
+            // Golden cross: fast crossed above slow -> Long
+            if (current_direction_ != SignalDirection::Long) {
                 SignalEvent sig;
-                sig.instrument_id_ = event.instrument_id_;
-                sig.direction_     = SignalDirection::Buy;
-                sig.strength_      = 1.0;
-                sig.confidence_    = 1.0;
-                sig.reason_        = "MA_Crossover:Golden"_v;
-                sig.timestamp_     = event.timestamp_;
+                sig.symbol_    = event.symbol_;
+                sig.direction_ = SignalDirection::Long;
+                sig.strength_  = 1.0;
+                sig.confidence_ = 1.0;
+                sig.date_      = event.date_;
                 return Opt{spp::move(sig)};
             }
         } else if (!fast_above_slow_curr && fast_above_slow_prev) {
-            // Death cross: fast crossed below slow -> Sell
-            if (current_direction_ != SignalDirection::Sell) {
+            // Death cross: fast crossed below slow -> Short
+            if (current_direction_ != SignalDirection::Short) {
                 SignalEvent sig;
-                sig.instrument_id_ = event.instrument_id_;
-                sig.direction_     = SignalDirection::Sell;
-                sig.strength_      = -1.0;
-                sig.confidence_    = 1.0;
-                sig.reason_        = "MA_Crossover:Death"_v;
-                sig.timestamp_     = event.timestamp_;
+                sig.symbol_    = event.symbol_;
+                sig.direction_ = SignalDirection::Short;
+                sig.strength_  = -1.0;
+                sig.confidence_ = 1.0;
+                sig.date_      = event.date_;
                 return Opt{spp::move(sig)};
             }
         }
@@ -262,11 +180,8 @@ struct MACrossover : Strategy {
         if (capital <= 0.0) return orders;
 
         // Position size = position_size_pct_ * capital / price
-        // For simplicity, signal.strength encodes direction magnitude;
-        // target_price_ would ideally come from MarketEvent.
-        // We use a simple fraction-of-capital sizing.
         f64 notional = capital * position_size_pct_;
-        if (signal.direction_ == SignalDirection::Buy) {
+        if (signal.direction_ == SignalDirection::Long) {
             target_qty = notional / signal.strength_;  // placeholder: need actual price
         } else {
             target_qty = -notional;
@@ -274,7 +189,7 @@ struct MACrossover : Strategy {
 
         // Determine what we currently hold
         f64 current_qty = 0.0;
-        auto pos_opt = positions_.find(signal.instrument_id_);
+        auto pos_opt = positions_.find(signal.symbol_);
         if (pos_opt.ok()) {
             current_qty = (*pos_opt)->quantity_;
         }
@@ -283,16 +198,15 @@ struct MACrossover : Strategy {
         if (Math::abs(delta) < 1e-10) return orders;
 
         OrderEvent order;
-        order.instrument_id_ = signal.instrument_id_;
-        order.strategy_id_   = name_;
-        order.timestamp_     = signal.timestamp_;
-        order.side_          = (delta > 0.0) ? OrderSide::Buy : OrderSide::Sell;
-        order.quantity_      = (delta > 0.0) ? delta : -delta;
-        order.limit_price_   = 0.0;  // market order
+        order.symbol_   = signal.symbol_;
+        order.date_     = signal.date_;
+        order.side_     = (delta > 0.0) ? OrderSide::Buy : OrderSide::Sell;
+        order.quantity_ = (delta > 0.0) ? delta : -delta;
+        order.price_    = 0.0;  // market order
         orders.push(spp::move(order));
 
-        current_direction_ = (target_qty > 0.0) ? SignalDirection::Buy
-                          : (target_qty < 0.0) ? SignalDirection::Sell
+        current_direction_ = (target_qty > 0.0) ? SignalDirection::Long
+                          : (target_qty < 0.0) ? SignalDirection::Short
                           : SignalDirection::Flat;
 
         return orders;
@@ -301,34 +215,34 @@ struct MACrossover : Strategy {
     void on_fill(const FillEvent& fill) override {
         // Update position and cash
         f64 signed_qty = fill.signed_quantity();
-        f64 cost = fill.fill_price_ * fill.quantity_ + fill.commission_;
+        f64 cost = fill.price_ * fill.quantity_ + fill.commission_;
 
-        auto pos_opt = positions_.find(fill.instrument_id_);
+        auto pos_opt = positions_.find(fill.symbol_);
         if (pos_opt.ok()) {
             Position& pos = **pos_opt;
             if (pos.quantity_ + signed_qty == 0.0) {
                 // Position closed
-                positions_.remove(fill.instrument_id_);
+                positions_.remove(fill.symbol_);
             } else {
                 // Average into entry price
                 f64 new_qty = pos.quantity_ + signed_qty;
-                f64 new_cost_basis = pos.quantity_ * pos.entry_price_ + signed_qty * fill.fill_price_;
+                f64 new_cost_basis = pos.quantity_ * pos.entry_price_ + signed_qty * fill.price_;
                 pos.quantity_ = new_qty;
                 pos.entry_price_ = (new_qty != 0.0) ? new_cost_basis / new_qty : 0.0;
             }
         } else if (signed_qty != 0.0) {
             Position new_pos;
-            new_pos.instrument_id_ = fill.instrument_id_;
+            new_pos.instrument_id_ = fill.symbol_;
             new_pos.quantity_      = signed_qty;
-            new_pos.entry_price_   = fill.fill_price_;
-            new_pos.entry_date_    = fill.timestamp_;
+            new_pos.entry_price_   = fill.price_;
+            new_pos.entry_date_    = fill.date_;
             positions_.add(spp::move(new_pos));
         }
 
         if (fill.side_ == OrderSide::Buy)
             cash_ -= cost;
         else
-            cash_ += fill.fill_price_ * fill.quantity_ - fill.commission_;
+            cash_ += fill.price_ * fill.quantity_ - fill.commission_;
     }
 
     SPP_RECORD(MACrossover, SPP_FIELD(fast_window_), SPP_FIELD(slow_window_));
@@ -387,22 +301,20 @@ struct MeanReversion : Strategy {
             if (z > entry_z_score_) {
                 // Price is too high -> sell short (mean-revert down)
                 SignalEvent sig;
-                sig.instrument_id_ = event.instrument_id_;
-                sig.direction_     = SignalDirection::Sell;
-                sig.strength_      = -Math::min(1.0, (z - entry_z_score_) / entry_z_score_);
-                sig.confidence_    = Math::min(1.0, Math::abs(z) / (2.0 * entry_z_score_));
-                sig.reason_        = "MeanReversion:Z_Above"_v;
-                sig.timestamp_     = event.timestamp_;
+                sig.symbol_    = event.symbol_;
+                sig.direction_ = SignalDirection::Short;
+                sig.strength_  = -Math::min(1.0, (z - entry_z_score_) / entry_z_score_);
+                sig.confidence_ = Math::min(1.0, Math::abs(z) / (2.0 * entry_z_score_));
+                sig.date_      = event.date_;
                 return Opt{spp::move(sig)};
             } else if (z < -entry_z_score_) {
                 // Price is too low -> buy (mean-revert up)
                 SignalEvent sig;
-                sig.instrument_id_ = event.instrument_id_;
-                sig.direction_     = SignalDirection::Buy;
-                sig.strength_      = Math::min(1.0, (-z - entry_z_score_) / entry_z_score_);
-                sig.confidence_    = Math::min(1.0, Math::abs(z) / (2.0 * entry_z_score_));
-                sig.reason_        = "MeanReversion:Z_Below"_v;
-                sig.timestamp_     = event.timestamp_;
+                sig.symbol_    = event.symbol_;
+                sig.direction_ = SignalDirection::Long;
+                sig.strength_  = Math::min(1.0, (-z - entry_z_score_) / entry_z_score_);
+                sig.confidence_ = Math::min(1.0, Math::abs(z) / (2.0 * entry_z_score_));
+                sig.date_      = event.date_;
                 return Opt{spp::move(sig)};
             }
         }
@@ -411,12 +323,11 @@ struct MeanReversion : Strategy {
         if (current_direction_ != SignalDirection::Flat) {
             if (Math::abs(z) < exit_z_score_) {
                 SignalEvent sig;
-                sig.instrument_id_ = event.instrument_id_;
-                sig.direction_     = SignalDirection::Flat;  // exit
-                sig.strength_      = 0.0;
-                sig.confidence_    = 1.0;
-                sig.reason_        = "MeanReversion:Exit"_v;
-                sig.timestamp_     = event.timestamp_;
+                sig.symbol_    = event.symbol_;
+                sig.direction_ = SignalDirection::Flat;  // exit
+                sig.strength_  = 0.0;
+                sig.confidence_ = 1.0;
+                sig.date_      = event.date_;
                 return Opt{spp::move(sig)};
             }
         }
@@ -432,12 +343,11 @@ struct MeanReversion : Strategy {
                 const Position& p = positions_.positions_[i];
                 if (p.quantity_ == 0.0) continue;
                 OrderEvent order;
-                order.instrument_id_ = p.instrument_id_;
-                order.strategy_id_   = name_;
-                order.timestamp_     = signal.timestamp_;
-                order.side_          = (p.quantity_ > 0.0) ? OrderSide::Sell : OrderSide::Buy;
-                order.quantity_      = Math::abs(p.quantity_);
-                order.limit_price_   = 0.0;
+                order.symbol_   = p.instrument_id_;
+                order.date_     = signal.date_;
+                order.side_     = (p.quantity_ > 0.0) ? OrderSide::Sell : OrderSide::Buy;
+                order.quantity_ = Math::abs(p.quantity_);
+                order.price_    = 0.0;
                 orders.push(spp::move(order));
             }
             current_direction_ = SignalDirection::Flat;
@@ -450,17 +360,16 @@ struct MeanReversion : Strategy {
         f64 notional = capital * position_size_pct_;
 
         OrderEvent order;
-        order.instrument_id_ = signal.instrument_id_;
-        order.strategy_id_   = name_;
-        order.timestamp_     = signal.timestamp_;
-        if (signal.direction_ == SignalDirection::Buy) {
+        order.symbol_   = signal.symbol_;
+        order.date_     = signal.date_;
+        if (signal.direction_ == SignalDirection::Long) {
             order.side_     = OrderSide::Buy;
             order.quantity_ = notional;  // placeholder, scaled by price at execution
         } else {
             order.side_     = OrderSide::Sell;
             order.quantity_ = notional;
         }
-        order.limit_price_ = 0.0;
+        order.price_ = 0.0;
         orders.push(spp::move(order));
 
         current_direction_ = signal.direction_;
@@ -469,32 +378,32 @@ struct MeanReversion : Strategy {
 
     void on_fill(const FillEvent& fill) override {
         f64 signed_qty = fill.signed_quantity();
-        f64 cost = fill.fill_price_ * fill.quantity_ + fill.commission_;
+        f64 cost = fill.price_ * fill.quantity_ + fill.commission_;
 
-        auto pos_opt = positions_.find(fill.instrument_id_);
+        auto pos_opt = positions_.find(fill.symbol_);
         if (pos_opt.ok()) {
             Position& pos = **pos_opt;
             if (pos.quantity_ + signed_qty == 0.0) {
-                positions_.remove(fill.instrument_id_);
+                positions_.remove(fill.symbol_);
             } else {
                 f64 new_qty = pos.quantity_ + signed_qty;
-                f64 new_cost_basis = pos.quantity_ * pos.entry_price_ + signed_qty * fill.fill_price_;
+                f64 new_cost_basis = pos.quantity_ * pos.entry_price_ + signed_qty * fill.price_;
                 pos.quantity_ = new_qty;
                 pos.entry_price_ = (new_qty != 0.0) ? new_cost_basis / new_qty : 0.0;
             }
         } else if (signed_qty != 0.0) {
             Position new_pos;
-            new_pos.instrument_id_ = fill.instrument_id_;
+            new_pos.instrument_id_ = fill.symbol_;
             new_pos.quantity_      = signed_qty;
-            new_pos.entry_price_   = fill.fill_price_;
-            new_pos.entry_date_    = fill.timestamp_;
+            new_pos.entry_price_   = fill.price_;
+            new_pos.entry_date_    = fill.date_;
             positions_.add(spp::move(new_pos));
         }
 
         if (fill.side_ == OrderSide::Buy)
             cash_ -= cost;
         else
-            cash_ += fill.fill_price_ * fill.quantity_ - fill.commission_;
+            cash_ += fill.price_ * fill.quantity_ - fill.commission_;
     }
 
     SPP_RECORD(MeanReversion, SPP_FIELD(lookback_), SPP_FIELD(entry_z_score_),
@@ -506,8 +415,8 @@ struct MeanReversion : Strategy {
 // =========================================================================
 //
 // Computes lookback return: r = (P_t - P_{t-lookback}) / P_{t-lookback}
-// Entry: when r > min_return_pct_ (positive momentum -> buy)
-//        when r < -min_return_pct_ (negative momentum -> sell)
+// Entry: when r > min_return_pct_ (positive momentum -> Long)
+//        when r < -min_return_pct_ (negative momentum -> Short)
 // Hold for holding_period_ days, then exit and re-evaluate.
 
 struct Momentum : Strategy {
@@ -542,12 +451,11 @@ struct Momentum : Strategy {
             if (days_held_ >= holding_period_) {
                 // Exit position
                 SignalEvent sig;
-                sig.instrument_id_ = event.instrument_id_;
-                sig.direction_     = SignalDirection::Flat;
-                sig.strength_      = 0.0;
-                sig.confidence_    = 1.0;
-                sig.reason_        = "Momentum:HoldExpired"_v;
-                sig.timestamp_     = event.timestamp_;
+                sig.symbol_    = event.symbol_;
+                sig.direction_ = SignalDirection::Flat;
+                sig.strength_  = 0.0;
+                sig.confidence_ = 1.0;
+                sig.date_      = event.date_;
                 return Opt{spp::move(sig)};
             }
             return {};  // still holding
@@ -558,22 +466,20 @@ struct Momentum : Strategy {
         if (ret > min_return_pct_) {
             // Positive momentum: go long
             SignalEvent sig;
-            sig.instrument_id_ = event.instrument_id_;
-            sig.direction_     = SignalDirection::Buy;
-            sig.strength_      = Math::min(1.0, ret / min_return_pct_);
-            sig.confidence_    = Math::min(1.0, Math::abs(ret) / (2.0 * min_return_pct_));
-            sig.reason_        = "Momentum:Positive"_v;
-            sig.timestamp_     = event.timestamp_;
+            sig.symbol_    = event.symbol_;
+            sig.direction_ = SignalDirection::Long;
+            sig.strength_  = Math::min(1.0, ret / min_return_pct_);
+            sig.confidence_ = Math::min(1.0, Math::abs(ret) / (2.0 * min_return_pct_));
+            sig.date_      = event.date_;
             return Opt{spp::move(sig)};
         } else if (ret < -min_return_pct_) {
             // Negative momentum: go short
             SignalEvent sig;
-            sig.instrument_id_ = event.instrument_id_;
-            sig.direction_     = SignalDirection::Sell;
-            sig.strength_      = -Math::min(1.0, -ret / min_return_pct_);
-            sig.confidence_    = Math::min(1.0, Math::abs(ret) / (2.0 * min_return_pct_));
-            sig.reason_        = "Momentum:Negative"_v;
-            sig.timestamp_     = event.timestamp_;
+            sig.symbol_    = event.symbol_;
+            sig.direction_ = SignalDirection::Short;
+            sig.strength_  = -Math::min(1.0, -ret / min_return_pct_);
+            sig.confidence_ = Math::min(1.0, Math::abs(ret) / (2.0 * min_return_pct_));
+            sig.date_      = event.date_;
             return Opt{spp::move(sig)};
         }
 
@@ -589,12 +495,11 @@ struct Momentum : Strategy {
                 const Position& p = positions_.positions_[i];
                 if (p.quantity_ == 0.0) continue;
                 OrderEvent order;
-                order.instrument_id_ = p.instrument_id_;
-                order.strategy_id_   = name_;
-                order.timestamp_     = signal.timestamp_;
-                order.side_          = (p.quantity_ > 0.0) ? OrderSide::Sell : OrderSide::Buy;
-                order.quantity_      = Math::abs(p.quantity_);
-                order.limit_price_   = 0.0;
+                order.symbol_   = p.instrument_id_;
+                order.date_     = signal.date_;
+                order.side_     = (p.quantity_ > 0.0) ? OrderSide::Sell : OrderSide::Buy;
+                order.quantity_ = Math::abs(p.quantity_);
+                order.price_    = 0.0;
                 orders.push(spp::move(order));
             }
             current_direction_ = SignalDirection::Flat;
@@ -608,17 +513,16 @@ struct Momentum : Strategy {
         f64 notional = capital * position_size_pct_;
 
         OrderEvent order;
-        order.instrument_id_ = signal.instrument_id_;
-        order.strategy_id_   = name_;
-        order.timestamp_     = signal.timestamp_;
-        if (signal.direction_ == SignalDirection::Buy) {
+        order.symbol_   = signal.symbol_;
+        order.date_     = signal.date_;
+        if (signal.direction_ == SignalDirection::Long) {
             order.side_     = OrderSide::Buy;
             order.quantity_ = notional;
         } else {
             order.side_     = OrderSide::Sell;
             order.quantity_ = notional;
         }
-        order.limit_price_ = 0.0;
+        order.price_ = 0.0;
         orders.push(spp::move(order));
 
         current_direction_ = signal.direction_;
@@ -629,32 +533,32 @@ struct Momentum : Strategy {
 
     void on_fill(const FillEvent& fill) override {
         f64 signed_qty = fill.signed_quantity();
-        f64 cost = fill.fill_price_ * fill.quantity_ + fill.commission_;
+        f64 cost = fill.price_ * fill.quantity_ + fill.commission_;
 
-        auto pos_opt = positions_.find(fill.instrument_id_);
+        auto pos_opt = positions_.find(fill.symbol_);
         if (pos_opt.ok()) {
             Position& pos = **pos_opt;
             if (pos.quantity_ + signed_qty == 0.0) {
-                positions_.remove(fill.instrument_id_);
+                positions_.remove(fill.symbol_);
             } else {
                 f64 new_qty = pos.quantity_ + signed_qty;
-                f64 new_cost_basis = pos.quantity_ * pos.entry_price_ + signed_qty * fill.fill_price_;
+                f64 new_cost_basis = pos.quantity_ * pos.entry_price_ + signed_qty * fill.price_;
                 pos.quantity_ = new_qty;
                 pos.entry_price_ = (new_qty != 0.0) ? new_cost_basis / new_qty : 0.0;
             }
         } else if (signed_qty != 0.0) {
             Position new_pos;
-            new_pos.instrument_id_ = fill.instrument_id_;
+            new_pos.instrument_id_ = fill.symbol_;
             new_pos.quantity_      = signed_qty;
-            new_pos.entry_price_   = fill.fill_price_;
-            new_pos.entry_date_    = fill.timestamp_;
+            new_pos.entry_price_   = fill.price_;
+            new_pos.entry_date_    = fill.date_;
             positions_.add(spp::move(new_pos));
         }
 
         if (fill.side_ == OrderSide::Buy)
             cash_ -= cost;
         else
-            cash_ += fill.fill_price_ * fill.quantity_ - fill.commission_;
+            cash_ += fill.price_ * fill.quantity_ - fill.commission_;
     }
 
     SPP_RECORD(Momentum, SPP_FIELD(lookback_), SPP_FIELD(holding_period_),
@@ -663,7 +567,20 @@ struct Momentum : Strategy {
 
 } // namespace spp::quant
 
-SPP_NAMED_ENUM(::spp::quant::SignalDirection, "SignalDirection", Flat,
-               SPP_CASE(Flat), SPP_CASE(Buy), SPP_CASE(Sell));
-SPP_NAMED_ENUM(::spp::quant::OrderSide, "OrderSide", Buy,
-               SPP_CASE(Buy), SPP_CASE(Sell));
+// =========================================================================
+// SPP reflection records for strategy types only.
+// Event type records are in core/types.h.
+// SignalDirection and OrderSide reflection records are in core/types.h.
+// =========================================================================
+SPP_NAMED_RECORD(::spp::quant::Strategy, "Strategy", SPP_FIELD(name_));
+
+SPP_NAMED_RECORD(::spp::quant::MACrossover, "MACrossover",
+                 SPP_FIELD(fast_window_), SPP_FIELD(slow_window_));
+
+SPP_NAMED_RECORD(::spp::quant::MeanReversion, "MeanReversion",
+                 SPP_FIELD(lookback_), SPP_FIELD(entry_z_score_),
+                 SPP_FIELD(exit_z_score_));
+
+SPP_NAMED_RECORD(::spp::quant::Momentum, "Momentum",
+                 SPP_FIELD(lookback_), SPP_FIELD(holding_period_),
+                 SPP_FIELD(min_return_pct_));

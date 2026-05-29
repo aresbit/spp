@@ -69,7 +69,7 @@ struct BlackScholes {
         f64 S = opt.underlying_spot_;
         f64 K = opt.strike_;
         f64 T = static_cast<f64>(opt.expiry_.serial_ - mkt.as_of_.serial_) / 365.0;
-        f64 r = zero_rate(mkt, T);
+        f64 r = mkt.zero_rate(opt.expiry_, Compounding::Continuous, Frequency::Annual);
         f64 q = mkt.dividend_yield_.ok() ? *mkt.dividend_yield_ : 0.0;
         f64 v = mkt.black_vol(opt.expiry_, opt.strike_);
         return price(opt.type_, S, K, T, r, q, v);
@@ -131,7 +131,7 @@ struct BlackScholes {
         f64 S = opt.underlying_spot_;
         f64 K = opt.strike_;
         f64 T = static_cast<f64>(opt.expiry_.serial_ - mkt.as_of_.serial_) / 365.0;
-        f64 r = zero_rate(mkt, T);
+        f64 r = mkt.zero_rate(opt.expiry_, Compounding::Continuous, Frequency::Annual);
         f64 q = mkt.dividend_yield_.ok() ? *mkt.dividend_yield_ : 0.0;
         f64 v = mkt.black_vol(opt.expiry_, opt.strike_);
         return greeks(opt.type_, S, K, T, r, q, v);
@@ -409,27 +409,6 @@ struct BlackScholes {
                           forward * dist::normal_cdf(-d1));
     }
 
-private:
-    // Derive continuously-compounded zero rate from discount factor
-    static f64 zero_rate(const MarketData& mkt, f64 t) noexcept {
-        if (t <= 0.0) return 0.0;
-        f64 df = mkt.discount(mkt.as_of_);
-        // Use the discount at 2*t to approximate the rate, since
-        // discount(Date) is relative to as_of_.  We compute:
-        // r = -ln(DF) / t where DF = mkt.discount(target_date)
-        // But we only have t as a double, not a Date, so we use
-        // the discount at the actual expiry date stored in the option.
-        // For the standalone (non-option-overload) path, t is given
-        // directly; we approximate r via the discount curve at as_of_+t.
-        // Since MarketData's discount() currently returns 1.0, r = 0.
-        (void)mkt;
-        (void)t;
-        // When discount_curve_ is fully wired, compute:
-        // Date d = mkt.as_of_ + static_cast<i32>(t * 365.0);
-        // f64 df = mkt.discount(d);
-        // return -::log(Math::max(df, 1e-15)) / t;
-        return 0.0;
-    }
 };
 
 } // namespace spp::quant

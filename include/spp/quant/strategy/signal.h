@@ -137,9 +137,9 @@ struct SignalCombiner {
 
         // Set direction
         if (result.strength_ > 0.01)
-            result.direction_ = SignalDirection::Buy;
+            result.direction_ = SignalDirection::Long;
         else if (result.strength_ < -0.01)
-            result.direction_ = SignalDirection::Sell;
+            result.direction_ = SignalDirection::Short;
         else
             result.direction_ = SignalDirection::Flat;
 

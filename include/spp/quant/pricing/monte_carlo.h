@@ -259,11 +259,11 @@ struct MCEngine {
     // ---- Extract parameters from MarketData ---------------------------------
 
     static f64 extract_r(const MarketData& mkt, f64 t) noexcept {
-        (void)mkt; (void)t;
-        // Placeholder: when yield curves are wired, compute:
-        // f64 df = mkt.discount(mkt.as_of_ + i32(t * 365.0));
-        // return -::log(Math::max(df, 1e-15)) / t;
-        return 0.0;
+        if (t <= 0.0) return 0.0;
+        // Construct approximate Date from as_of_ + t years
+        Date d = mkt.as_of_;
+        d.serial_ += static_cast<i32>(t * 365.0 + 0.5);
+        return mkt.zero_rate(d, Compounding::Continuous, Frequency::Annual);
     }
 
     static f64 extract_q(const MarketData& mkt) noexcept {

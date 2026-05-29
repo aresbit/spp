@@ -4,13 +4,15 @@
 #error "Include spp/core/base.h before quant headers."
 #endif
 
-#include "spp/quant/base/date.h" // for Date
+#include "spp/quant/base/date.h"
+#include "spp/quant/termstructures/yield_curve.h"
+#include "spp/quant/termstructures/vol_surface.h"
 
 namespace spp::quant {
 
-// ---- forward declarations (superseded by Handle<T> in a later phase) ------
-struct YieldCurve;
-struct VolSurface;
+// ---- concrete type aliases (superseded by Handle<T> in a later phase) ------
+using YieldCurve = PiecewiseYieldCurve<interp::Interpolation<>>;
+using VolSurface = BlackVolSurface<>;
 struct Quote;
 
 // =========================================================================
@@ -19,6 +21,9 @@ struct Quote;
 // Stores pointers to term structures and scalar parameters required to
 // price most derivative instruments.  Raw pointers will be replaced by
 // Handle<T> (QuantLib-style observable handles) in a later phase.
+//
+// Accessor methods delegate to the stored term structures when set,
+// falling back to sensible defaults when curves/surfaces are absent.
 // =========================================================================
 struct MarketData {
     Date as_of_;
@@ -43,39 +48,97 @@ struct MarketData {
     Opt<YieldCurve*> credit_curve_; // survival / hazard-rate curve
     Opt<f64> recovery_rate_;
 
-    // ---- convenience accessors (require the relevant field to be set) ---
-    // Discount factor from as_of_ to d.
+    // ---- convenience accessors ------------------------------------------
+
+    /// Discount factor from as_of_ to d.
+    /// Delegates to discount_curve_->discount(d) when a curve is set;
+    /// falls back to 1.0 (flat zero-rate curve).
     [[nodiscard]] f64 discount(Date d) const noexcept;
-    // Forward rate between t1 and t2 (actual/actual continuous compounding).
+
+    /// Simply-compounded forward rate between t1 and t2.
+    /// Delegates to discount_curve_->forward_rate() when available.
     [[nodiscard]] f64 forward_rate(Date t1, Date t2) const noexcept;
-    // Black-model volatility for a given expiry and strike.
+
+    /// Zero-coupon rate implied by the discount factor between as_of_ and d.
+    /// Delegates to discount_curve_->zero_rate() when a curve is set;
+    /// falls back to 0.0 (flat curve).
+    [[nodiscard]] f64 zero_rate(Date d,
+                                 Compounding comp = Compounding::Continuous,
+                                 Frequency freq = Frequency::Annual) const noexcept;
+
+    /// Continuously-compounded zero rate — convenience shorthand for
+    /// zero_rate(d, Compounding::Continuous, Frequency::Annual).
+    [[nodiscard]] f64 continuous_rate(Date d) const noexcept;
+
+    /// Black-model implied volatility for a given expiry and strike.
+    /// Delegates to vol_surface_->black_vol() when a surface is set;
+    /// falls back to 0.2 (20% flat vol).
     [[nodiscard]] f64 black_vol(Date expiry, f64 strike) const noexcept;
-    // Underlying spot price.
+
+    /// Underlying spot price.
     [[nodiscard]] f64 spot() const noexcept;
 };
 
-// Accessor stubs — the real implementations will forward to the actual
-// YieldCurve / VolSurface methods once those types are defined.
+// =========================================================================
+// Accessor implementations
+// =========================================================================
+
 inline f64 MarketData::discount(Date d) const noexcept {
-    // Placeholder: when YieldCurve is defined, delegate to
-    // discount_curve_->discount(d).
-    (void)d;
+    if (discount_curve_.ok()) {
+        YieldCurve* yc = *discount_curve_;
+        if (yc != null) {
+            return yc->discount(d);
+        }
+    }
+    // Fallback: flat curve, df = 1.0 everywhere
+    if (d <= as_of_) return 1.0;
     return 1.0;
 }
 
 inline f64 MarketData::forward_rate(Date t1, Date t2) const noexcept {
-    // fwd = (discount(t1)/discount(t2) - 1) / dcf(t1,t2)
-    // Placeholder returns 0.
-    (void)t1;
-    (void)t2;
+    if (discount_curve_.ok()) {
+        YieldCurve* yc = *discount_curve_;
+        if (yc != null) {
+            return yc->forward_rate(t1, t2,
+                                     Compounding::Continuous,
+                                     Frequency::Annual);
+        }
+    }
+    // Fallback: compute from discount factors with simple day-count
+    f64 df1 = discount(t1);
+    f64 df2 = discount(t2);
+    i64 days = static_cast<i64>(t2.serial_ - t1.serial_);
+    if (days <= 0 || df2 <= 0.0) return 0.0;
+    f64 yf = static_cast<f64>(days) / 365.0;
+    return (df1 / df2 - 1.0) / yf;
+}
+
+inline f64 MarketData::zero_rate(Date d,
+                                   Compounding comp,
+                                   Frequency freq) const noexcept {
+    if (discount_curve_.ok()) {
+        YieldCurve* yc = *discount_curve_;
+        if (yc != null) {
+            return yc->zero_rate(d, comp, freq);
+        }
+    }
+    // Fallback: flat 0% curve
     return 0.0;
 }
 
+inline f64 MarketData::continuous_rate(Date d) const noexcept {
+    return zero_rate(d, Compounding::Continuous, Frequency::Annual);
+}
+
 inline f64 MarketData::black_vol(Date expiry, f64 strike) const noexcept {
-    // Placeholder: vol_surface_->black_vol(expiry, strike).
-    (void)expiry;
-    (void)strike;
-    return 0.2; // 20% placeholder
+    if (vol_surface_.ok()) {
+        VolSurface* vs = *vol_surface_;
+        if (vs != null) {
+            return vs->black_vol(expiry, strike);
+        }
+    }
+    // Fallback: flat 20% volatility
+    return 0.2;
 }
 
 inline f64 MarketData::spot() const noexcept {

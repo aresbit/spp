@@ -63,7 +63,7 @@ inline f64 price_barrier_bs(const BarrierOption& opt,
     f64 H = opt.barrier_;
     f64 T = static_cast<f64>(opt.expiry_.serial_ - mkt.as_of_.serial_) / 365.0;
     if (T <= 0.0) T = 0.0;
-    f64 r = 0.0; // placeholder until yield curve is wired
+    f64 r = mkt.zero_rate(opt.expiry_, Compounding::Continuous, Frequency::Annual);
     f64 q = mkt.dividend_yield_.ok() ? *mkt.dividend_yield_ : 0.0;
     f64 v = mkt.black_vol(opt.expiry_, opt.strike_);
 
@@ -86,7 +86,7 @@ inline f64 price_asian_geo(const AsianOption& opt,
         return (opt.type_ == OptionType::Call) ? Math::max(S - K, 0.0)
                                                : Math::max(K - S, 0.0);
     }
-    f64 r = 0.0;
+    f64 r = mkt.zero_rate(opt.expiry_, Compounding::Continuous, Frequency::Annual);
     f64 q = mkt.dividend_yield_.ok() ? *mkt.dividend_yield_ : 0.0;
     f64 v = mkt.black_vol(opt.expiry_, opt.strike_);
 
@@ -131,7 +131,7 @@ inline f64 price_digital_bs(const DigitalOption& opt,
     f64 S = opt.underlying_spot_;
     f64 K = opt.strike_;
     f64 T = static_cast<f64>(opt.expiry_.serial_ - mkt.as_of_.serial_) / 365.0;
-    f64 r = 0.0;
+    f64 r = mkt.zero_rate(opt.expiry_, Compounding::Continuous, Frequency::Annual);
     f64 q = mkt.dividend_yield_.ok() ? *mkt.dividend_yield_ : 0.0;
     f64 v = mkt.black_vol(opt.expiry_, opt.strike_);
 

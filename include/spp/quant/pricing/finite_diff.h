@@ -121,14 +121,16 @@ struct FDEngine {
     /// Falls back to 0.05 (5%) when the discount curve is unavailable.
     static f64 extract_rate(const MarketData& mkt, f64 t) noexcept {
         if (t <= 0.0) return 0.0;
-        // When YieldCurve is fully wired, use:
-        //   Date d = mkt.as_of_;  d.serial_ += static_cast<i32>(t*365);
-        //   f64 df = mkt.discount(d);
-        //   return -Math::log(Math::max(df, 1e-15)) / t;
-        // For now, fall back to a reasonable default.
-        (void)mkt;
-        (void)t;
-        return 0.05;  // [UNSPECIFIED] default rate 5%
+        // Construct approximate Date from as_of_ + t years
+        Date d = mkt.as_of_;
+        d.serial_ += static_cast<i32>(t * 365.0 + 0.5);
+        f64 r = mkt.zero_rate(d, Compounding::Continuous, Frequency::Annual);
+        // Fall back to 0.05 (5%) when no yield curve is provided
+        // (zero_rate returns 0.0 in that case — [UNSPECIFIED] default rate 5%)
+        if (Math::abs(r) < 1e-15) {
+            return 0.05;
+        }
+        return r;
     }
 
     /// Extracts dividend yield from MarketData.

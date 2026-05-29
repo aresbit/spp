@@ -19,8 +19,10 @@ namespace spp::quant {
 //
 // Trading rule:
 //   - Long spread (buy A, sell B * hedge_ratio) when z < -entry_z
-//   - Short spread (sell A, buy B * hedge_ratio) when z > entry_z
+//   - Short spread (sell A, buy B * hedge_ratio) when z > +entry_z
 //   - Close when |z| < exit_z
+//
+// Uses unified SignalDirection: Long / Short / Flat.
 
 struct PairsTrade {
     String_View asset_a_;
@@ -55,28 +57,25 @@ struct PairsTrade {
                                                      f64 exit_z = 0.5) const {
         f64 z = current_z_score_;
         SignalEvent sig;
-        sig.timestamp_ = Date::today();
+        sig.date_ = Date::today();
 
         if (z > entry_z) {
             // A is overvalued relative to B: short A, long B
-            sig.instrument_id_ = asset_a_;
-            sig.direction_     = SignalDirection::Sell;
-            sig.strength_      = -Math::min(1.0, (z - entry_z) / entry_z);
-            sig.reason_        = "PairsTrade:Z_Above"_v;
+            sig.symbol_    = asset_a_;
+            sig.direction_ = SignalDirection::Short;
+            sig.strength_  = -Math::min(1.0, (z - entry_z) / entry_z);
             return Opt{spp::move(sig)};
         } else if (z < -entry_z) {
             // A is undervalued relative to B: long A, short B
-            sig.instrument_id_ = asset_a_;
-            sig.direction_     = SignalDirection::Buy;
-            sig.strength_      = Math::min(1.0, (-z - entry_z) / entry_z);
-            sig.reason_        = "PairsTrade:Z_Below"_v;
+            sig.symbol_    = asset_a_;
+            sig.direction_ = SignalDirection::Long;
+            sig.strength_  = Math::min(1.0, (-z - entry_z) / entry_z);
             return Opt{spp::move(sig)};
         } else if (Math::abs(z) < exit_z) {
             // Spread has reverted: exit
-            sig.instrument_id_ = asset_a_;
-            sig.direction_     = SignalDirection::Flat;
-            sig.strength_      = 0.0;
-            sig.reason_        = "PairsTrade:Exit"_v;
+            sig.symbol_    = asset_a_;
+            sig.direction_ = SignalDirection::Flat;
+            sig.strength_  = 0.0;
             return Opt{spp::move(sig)};
         }
 
@@ -180,20 +179,6 @@ struct ADFTest {
 
         Vec<f64> dy_vec = Vec<f64>::make(nobs);  // Delta_y_t
 
-        for (u64 t = 0; t < nobs; t++) {
-            u64 idx = t + p;  // index in original series
-            col0[t] = 1.0;
-            col1[t] = y[idx];  // y_{t-1} (note: t+p maps to index before the p diffs)
-            // Actually: regression is Delta_y_t, y_{t-1} corresponds to lagged level
-            // Let me re-index correctly.
-            // The ADF regression: Delta_y_{t} = c + gamma*y_{t-1} + sum delta_i * Delta_y_{t-i}
-            // For t from p+1 to n-1:
-            //   y_t level: y[t] (index t)
-            //   y_{t-1}:    y[t-1]
-            //   Delta_y_{t-i}: y[t-i] - y[t-i-1]
-        }
-
-        // Let me restart with clearer indexing.
         // Observing y[0], y[1], ..., y[n-1]
         // For t = p, p+1, ..., n-1:
         //   LHS: Delta_y_t = y[t] - y[t-1]
@@ -204,8 +189,8 @@ struct ADFTest {
             col0[row] = 1.0;
             col1[row] = y[t - 1];                    // y_{t-1}
             for (u64 i = 0; i < p; i++) {
-                u64 lag = i + 1;
-                lag_cols[i][row] = y[t - lag] - y[t - lag - 1];  // Delta_y_{t-i}
+                u64 lag_ = i + 1;
+                lag_cols[i][row] = y[t - lag_] - y[t - lag_ - 1];  // Delta_y_{t-i}
             }
             dy_vec[row] = y[t] - y[t - 1];           // Delta_y_t
         }
@@ -299,22 +284,7 @@ struct ADFTest {
         f64 sigma2 = rss / static_cast<f64>(df_resid);
 
         // SE(gamma_hat) = sigma * sqrt(diag(X^T X)^{-1}[1,1])
-        // diag entry of (X^T X)^{-1} at position 1 is the (1,1) element of the inverse
-        // Compute the (1,1) element of the inverse using the Cholesky factor:
-        // Var(beta_j) = sigma^2 * sum_{k=j}^{ncols-1} (C[j][k])^2
-        // where C = L^{-1} (inverse of Cholesky factor, row-by-row)
-        // Actually, if X^T X = L L^T, then (X^T X)^{-1} = (L^{-1})^T L^{-1}
-        // The diagonal element jj is: sum_{k=j}^{ncols-1} (L^{-1}_{k,j})^2
-        // where L^{-1} is lower triangular (since L is lower triangular).
-        //
-        // A simpler approach: solve L^T v = e_j (where e_j is unit vector)
-        // then solve L w = v, and w_j is the diagonal entry.
-        // Let's just compute SE of gamma using the standard formula:
-        // For simple linear regression, SE(beta) = sigma / sqrt(S_xx * (1 - R^2_aux))
-        // But for the full ADF regression, we need the full inverse.
-        //
-        // We use a practical approach: compute the (1,1) element of the inverse
-        // via forward/backward substitution with unit vectors.
+        // Compute the (1,1) element of the inverse via forward/backward substitution
 
         // Solve X^T X * [a, b] = [0, 1, 0, ...]  to get col 1 of inverse
         // L * L^T * inv_col = e1
@@ -368,22 +338,18 @@ struct ADFTest {
             dy_vec[row] = y[t] - y[t - 1];
         }
 
-        // Simple OLS with full regressors (using the same approach as compute_adf_statistic)
-        // For BIC, we just need a reasonable approximation.
         // Build X^T X and solve as before.
         Vec<f64> XtX = Vec<f64>::make(ncols * ncols);
         Vec<f64> Xty = Vec<f64>::make(ncols);
 
         for (u64 j = 0; j < ncols; j++) {
-            // Direct construction is simpler: use the same col_ptr approach
             for (u64 t = 0; t < nobs; t++) {
-                // Col 0: 1.0, Col 1: y[t+p-1], Col 2+j: y[t+p-1-j] - y[t+p-2-j]
                 f64 val_j;
                 if (j == 0) val_j = 1.0;
                 else if (j == 1) val_j = y[t + p - 1];
                 else {
-                    u64 lag = j - 1;
-                    val_j = y[t + p - lag] - y[t + p - lag - 1];
+                    u64 lag_ = j - 1;
+                    val_j = y[t + p - lag_] - y[t + p - lag_ - 1];
                 }
                 Xty[j] += val_j * dy_vec[t];
                 for (u64 k = j; k < ncols; k++) {
@@ -391,8 +357,8 @@ struct ADFTest {
                     if (k == 0) val_k = 1.0;
                     else if (k == 1) val_k = y[t + p - 1];
                     else {
-                        u64 lag = k - 1;
-                        val_k = y[t + p - lag] - y[t + p - lag - 1];
+                        u64 lag_ = k - 1;
+                        val_k = y[t + p - lag_] - y[t + p - lag_ - 1];
                     }
                     f64 prod = val_j * val_k;
                     XtX[j * ncols + k] += prod;
@@ -411,8 +377,8 @@ struct ADFTest {
                 if (j == 0) val_j = 1.0;
                 else if (j == 1) val_j = y[t + p - 1];
                 else {
-                    u64 lag = j - 1;
-                    val_j = y[t + p - lag] - y[t + p - lag - 1];
+                    u64 lag_ = j - 1;
+                    val_j = y[t + p - lag_] - y[t + p - lag_ - 1];
                 }
                 pred += beta[j] * val_j;
             }
@@ -494,16 +460,7 @@ struct ADFTest {
     [[nodiscard]] static f64 critical_value(u64 n, f64 significance = 0.05) {
         // MacKinnon (1994) response surface parameters for ADF test
         // (constant, no trend case)
-        // Table 1 in MacKinnon (1994), for the case: "no constant, no trend"
-        // Actually, we use the "constant, no trend" case since we always
-        // include a constant in the test regression.
-
-        // For 1% significance:
-        //   beta_inf = -3.4335, beta1 = -5.999, beta2 = -29.25
-        // For 5% significance:
-        //   beta_inf = -2.8621, beta1 = -2.738, beta2 = -8.36
-        // For 10% significance:
-        //   beta_inf = -2.5671, beta1 = -1.438, beta2 = -4.48
+        // Table 1 in MacKinnon (1994)
 
         f64 beta_inf, beta1, beta2;
 
@@ -533,27 +490,22 @@ struct ADFTest {
 
     [[nodiscard]] static f64 approximate_pvalue(f64 stat, u64 n) {
         // Use linear interpolation between critical values to approximate p-value.
-        // CV at 1%, 5%, 10%:
         f64 cv01 = critical_value(n, 0.01);
         f64 cv05 = critical_value(n, 0.05);
         f64 cv10 = critical_value(n, 0.10);
 
-        // stat is more negative than cv01 => p < 0.01
         if (stat <= cv01) return 0.001;
 
-        // stat between cv01 and cv05
         if (stat <= cv05) {
             f64 frac = (stat - cv01) / (cv05 - cv01);
             return 0.01 + frac * 0.04;
         }
 
-        // stat between cv05 and cv10
         if (stat <= cv10) {
             f64 frac = (stat - cv05) / (cv10 - cv05);
             return 0.05 + frac * 0.05;
         }
 
-        // stat > cv10 => p > 0.10 (fail to reject)
         return 0.10 + (stat - cv10) / (-cv10) * 0.40;
     }
 };
@@ -665,7 +617,6 @@ struct PairFinder {
 
         // Step 1: OLS regression: A = alpha + beta * B
         stat::OLS_Result ols = stat::ols_regression(prices_b, prices_a);
-        // ols.alpha = intercept, ols.beta = hedge_ratio
 
         // Compute spread residuals: spread_t = A_t - alpha - beta * B_t
         Vec<f64> spread = Vec<f64>::make(n);
@@ -697,9 +648,6 @@ struct PairFinder {
         // Compute half-life of mean reversion
         // For an AR(1) process: spread_t = rho * spread_{t-1} + eps_t
         // half_life = -ln(2) / ln(|rho|)
-        // rho is estimated from the ADF test regression: rho = 1 + gamma
-        f64 gamma = adf_result.statistic_;  // this is the t-stat, not gamma_hat
-        // We need gamma_hat, not the t-statistic. Re-run a simple AR(1) to get rho.
         stat::OLS_Result ar1 = stat::ols_regression(
             spread.slice().sub(0, n - 1), spread.slice().sub(1, n - 1));
         f64 rho = ar1.beta;
@@ -829,11 +777,8 @@ struct MarketMaking : Strategy {
 
     /// Bid size: reduce when inventory is long, increase when short
     [[nodiscard]] f64 bid_size() const {
-        // Base size: inversely related to the spread (tighter spread = more size)
         f64 base = (optimal_spread_ > 1e-15) ? 1.0 / optimal_spread_ : 10.0;
-        // Inventory skew: if we're long, reduce bid size; if short, increase
         f64 skew = 1.0 - (inventory_ / max_inventory_);
-        // Clamp skew to [0, 2]
         if (skew < 0.0) skew = 0.0;
         if (skew > 2.0) skew = 2.0;
         return base * skew;
@@ -859,28 +804,23 @@ struct MarketMaking : Strategy {
 
         // Market making typically fires signals continuously,
         // not just at extremes. The on_signal handler is where
-        // quotes are generated. Returning no signal here to
-        // avoid infinite loops — market making is typically
-        // quote-driven, not signal-driven.
+        // quotes are generated.
         return {};
     }
 
     Vec<OrderEvent> on_signal(const SignalEvent& signal) override {
-        // In market making, signals are used for quoting.
-        // The caller should trigger: strategy.on_signal(a_dummy_signal)
-        // to get the current set of quotes as limit orders.
+        // Generate quotes as limit orders.
         Vec<OrderEvent> orders;
 
         // If inventory is at the limit, only quote to reduce position
         if (inventory_ <= -max_inventory_) {
             // Too short: only place buy orders
             OrderEvent buy;
-            buy.instrument_id_ = signal.instrument_id_;
-            buy.side_          = OrderSide::Buy;
-            buy.limit_price_   = bid_price();
-            buy.quantity_      = bid_size();
-            buy.strategy_id_   = name_;
-            buy.timestamp_     = signal.timestamp_;
+            buy.symbol_   = signal.symbol_;
+            buy.side_     = OrderSide::Buy;
+            buy.price_    = bid_price();
+            buy.quantity_ = bid_size();
+            buy.date_     = signal.date_;
             orders.push(spp::move(buy));
             return orders;
         }
@@ -888,12 +828,11 @@ struct MarketMaking : Strategy {
         if (inventory_ >= max_inventory_) {
             // Too long: only place sell orders
             OrderEvent sell;
-            sell.instrument_id_ = signal.instrument_id_;
-            sell.side_          = OrderSide::Sell;
-            sell.limit_price_   = ask_price();
-            sell.quantity_      = ask_size();
-            sell.strategy_id_   = name_;
-            sell.timestamp_     = signal.timestamp_;
+            sell.symbol_   = signal.symbol_;
+            sell.side_     = OrderSide::Sell;
+            sell.price_    = ask_price();
+            sell.quantity_ = ask_size();
+            sell.date_     = signal.date_;
             orders.push(spp::move(sell));
             return orders;
         }
@@ -901,22 +840,20 @@ struct MarketMaking : Strategy {
         // Normal quoting: place both bid and ask
         {
             OrderEvent bid;
-            bid.instrument_id_ = signal.instrument_id_;
-            bid.side_          = OrderSide::Buy;
-            bid.limit_price_   = bid_price();
-            bid.quantity_      = bid_size();
-            bid.strategy_id_   = name_;
-            bid.timestamp_     = signal.timestamp_;
+            bid.symbol_   = signal.symbol_;
+            bid.side_     = OrderSide::Buy;
+            bid.price_    = bid_price();
+            bid.quantity_ = bid_size();
+            bid.date_     = signal.date_;
             orders.push(spp::move(bid));
         }
         {
             OrderEvent ask;
-            ask.instrument_id_ = signal.instrument_id_;
-            ask.side_          = OrderSide::Sell;
-            ask.limit_price_   = ask_price();
-            ask.quantity_      = ask_size();
-            ask.strategy_id_   = name_;
-            ask.timestamp_     = signal.timestamp_;
+            ask.symbol_   = signal.symbol_;
+            ask.side_     = OrderSide::Sell;
+            ask.price_    = ask_price();
+            ask.quantity_ = ask_size();
+            ask.date_     = signal.date_;
             orders.push(spp::move(ask));
         }
 
@@ -927,30 +864,30 @@ struct MarketMaking : Strategy {
         f64 signed_qty = fill.signed_quantity();
         inventory_ += signed_qty;
 
-        f64 cost = fill.fill_price_ * fill.quantity_ + fill.commission_;
+        f64 cost = fill.price_ * fill.quantity_ + fill.commission_;
         if (fill.side_ == OrderSide::Buy)
             cash_ -= cost;
         else
-            cash_ += fill.fill_price_ * fill.quantity_ - fill.commission_;
+            cash_ += fill.price_ * fill.quantity_ - fill.commission_;
 
         // Update position book
-        auto pos_opt = positions_.find(fill.instrument_id_);
+        auto pos_opt = positions_.find(fill.symbol_);
         if (pos_opt.ok()) {
             Position& pos = **pos_opt;
             if (pos.quantity_ + signed_qty == 0.0) {
-                positions_.remove(fill.instrument_id_);
+                positions_.remove(fill.symbol_);
             } else {
                 f64 new_qty = pos.quantity_ + signed_qty;
-                f64 new_cost_basis = pos.quantity_ * pos.entry_price_ + signed_qty * fill.fill_price_;
+                f64 new_cost_basis = pos.quantity_ * pos.entry_price_ + signed_qty * fill.price_;
                 pos.quantity_ = new_qty;
                 pos.entry_price_ = (new_qty != 0.0) ? new_cost_basis / new_qty : 0.0;
             }
         } else if (signed_qty != 0.0) {
             Position new_pos;
-            new_pos.instrument_id_ = fill.instrument_id_;
+            new_pos.instrument_id_ = fill.symbol_;
             new_pos.quantity_      = signed_qty;
-            new_pos.entry_price_   = fill.fill_price_;
-            new_pos.entry_date_    = fill.timestamp_;
+            new_pos.entry_price_   = fill.price_;
+            new_pos.entry_date_    = fill.date_;
             positions_.add(spp::move(new_pos));
         }
     }

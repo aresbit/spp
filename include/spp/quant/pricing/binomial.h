@@ -502,11 +502,11 @@ private:
     }
 
     static f64 zero_rate(const MarketData& mkt, f64 t) noexcept {
-        // Placeholder: derive from discount curve when wired.
-        // For now the discount stub returns 1.0 so r=0.
-        (void)mkt;
-        (void)t;
-        return 0.0;
+        if (t <= 0.0) return 0.0;
+        // Construct approximate Date from as_of_ + t years
+        Date d = mkt.as_of_;
+        d.serial_ += static_cast<i32>(t * 365.0 + 0.5);
+        return mkt.zero_rate(d, Compounding::Continuous, Frequency::Annual);
     }
 
     static f64 div_yield(const MarketData& mkt) noexcept {
