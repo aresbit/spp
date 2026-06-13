@@ -73,8 +73,11 @@ int main(int argc, char** argv) {
     //    replays subscriptions (market) / re-login+subscribe (user) after
     //    a drop, so a transient disconnect self-heals instead of
     //    busy-spinning until the stale-data watchdog fires.
-    Tls_Session mkt_tls{k_public_ws_host, 8443};
-    Tls_Session usr_tls{k_public_ws_host, 8443};
+    // 模拟盘的 private 频道必须连 wspap.okx.com（实盘走 ws.okx.com）；行情 public
+    // 数据两域名一致，但统一用同一 host 既简单又满足 private 的硬性要求.
+    String_View ws_host = sim ? "wspap.okx.com"_v : k_public_ws_host;
+    Tls_Session mkt_tls{ws_host, 8443};
+    Tls_Session usr_tls{ws_host, 8443};
     Market_Stream<Ext::Tls_Mbedtls_Stream> mkt{mkt_tls.tls};
     User_Stream<Ext::Tls_Mbedtls_Stream>   us{usr_tls.tls};
 
@@ -83,23 +86,23 @@ int main(int argc, char** argv) {
     Ws_Session<Market_Stream<Ext::Tls_Mbedtls_Stream>,
                decltype(mkt_replay), Tls_Session>
         m_sess{mkt_tls, mkt, mkt_replay,
-               Ws_Endpoint{k_public_ws_host, k_public_ws_path}};
+               Ws_Endpoint{ws_host, k_public_ws_path}};
     Ws_Session<User_Stream<Ext::Tls_Mbedtls_Stream>,
                decltype(usr_replay), Tls_Session>
         u_sess{usr_tls, us, usr_replay,
-               Ws_Endpoint{k_public_ws_host, k_private_ws_path}};
+               Ws_Endpoint{ws_host, k_private_ws_path}};
 
     // Initial bring-up done explicitly (not via open_initial) so the
     // replay callbacks have subscriptions / login creds cached BEFORE the
     // first reconnect can occur.
     if (!mkt_tls.connect_now().ok()) return 1;
-    if (!mkt.open().ok()) return 1;
+    if (!mkt.open(ws_host, k_public_ws_path).ok()) return 1;
     Subscription sm{"trades"_v, sym};
     static_cast<void>(mkt.subscribe(Slice<const Subscription>{&sm, 1}));
     m_sess.ws_open_ = true; m_sess.last_activity_at_ms_ = now_ms();
 
     if (!usr_tls.connect_now().ok()) return 1;
-    if (!us.open().ok()) return 1;
+    if (!us.open(ws_host, k_private_ws_path).ok()) return 1;
     static_cast<void>(us.login(cli.signer, now_ms()));
     Subscription u1{"orders"_v, sym}, u2{"account"_v, ""_v};
     Subscription ua[2] = {u1, u2};
@@ -155,7 +158,8 @@ int main(int argc, char** argv) {
         // frame returned by recv_or_reconnect.
         if (n - (i64)last_data_ms > 5 * 60 * 1000) {
             mkt_tls.tls.close();
-            if (mkt_tls.connect_now().ok() && mkt.open().ok()) {
+            if (mkt_tls.connect_now().ok() &&
+                mkt.open(ws_host, k_public_ws_path).ok()) {
                 static_cast<void>(mkt.resubscribe_all());
                 m_sess.ws_open_ = true;
                 m_sess.last_activity_at_ms_ = n;
