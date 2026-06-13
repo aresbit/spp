@@ -1,6 +1,6 @@
 #include "test.h"
 
-#include <spp/quant/backtest/engine.h>
+#include <spp/quant/backtest/sim_engine.h>
 #include <spp/quant/data/ohlcv_data.h>
 #include <spp/quant/strategy/strategy_base.h>
 

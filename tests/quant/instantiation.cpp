@@ -5,7 +5,7 @@
 // when a downstream user calls it. Keep this exercise here so future drift
 // fails `make test` instead of someone's production attempt.
 
-#include <spp/quant/backtest/engine.h>
+#include <spp/quant/backtest/sim_engine.h>
 #include <spp/quant/backtest/market_rules.h>
 #include <spp/quant/backtest/slippage.h>
 #include <spp/quant/backtest/types.h>
