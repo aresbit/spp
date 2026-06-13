@@ -11,6 +11,7 @@
 #include <okx/live_driver.h>
 #include <okx/market_stream.h>
 #include <okx/user_stream.h>
+#include <okx/ws_session.h>
 #include <strategies/chan_live.h>
 #include <spp/io/files.h>
 #include <spp/io/wal.h>
@@ -66,19 +67,44 @@ int main(int argc, char** argv) {
     // 6. WAL (crash recovery).
     WAL::Writer wal; wal.open_result("driver.wal"_v, 4096, 4096);
 
-    // 7. Market WS + User WS.
-    Ext::Tls_Mbedtls_Stream mt, ut;
-    mt.connect_result("ws.okx.com"_v, 8443);
-    Market_Stream<Ext::Tls_Mbedtls_Stream> mkt{mt}; mkt.open();
-    Subscription sm{"trades"_v, sym};
-    mkt.subscribe(Slice<const Subscription>{&sm, 1});
+    // 7. Market + User WS over reconnect-managed TLS sessions.  Each
+    //    Tls_Session owns its mbedTLS stream and paces reconnect backoff;
+    //    the Ws_Session above it re-runs the RFC6455 handshake and
+    //    replays subscriptions (market) / re-login+subscribe (user) after
+    //    a drop, so a transient disconnect self-heals instead of
+    //    busy-spinning until the stale-data watchdog fires.
+    Tls_Session mkt_tls{k_public_ws_host, 8443};
+    Tls_Session usr_tls{k_public_ws_host, 8443};
+    Market_Stream<Ext::Tls_Mbedtls_Stream> mkt{mkt_tls.tls};
+    User_Stream<Ext::Tls_Mbedtls_Stream>   us{usr_tls.tls};
 
-    ut.connect_result("ws.okx.com"_v, 8443);
-    User_Stream<Ext::Tls_Mbedtls_Stream> us{ut}; us.open();
-    us.login(cli.signer, now_ms());
+    auto mkt_replay = make_market_replay<Ext::Tls_Mbedtls_Stream>();
+    auto usr_replay = make_user_replay<Ext::Tls_Mbedtls_Stream>();
+    Ws_Session<Market_Stream<Ext::Tls_Mbedtls_Stream>,
+               decltype(mkt_replay), Tls_Session>
+        m_sess{mkt_tls, mkt, mkt_replay,
+               Ws_Endpoint{k_public_ws_host, k_public_ws_path}};
+    Ws_Session<User_Stream<Ext::Tls_Mbedtls_Stream>,
+               decltype(usr_replay), Tls_Session>
+        u_sess{usr_tls, us, usr_replay,
+               Ws_Endpoint{k_public_ws_host, k_private_ws_path}};
+
+    // Initial bring-up done explicitly (not via open_initial) so the
+    // replay callbacks have subscriptions / login creds cached BEFORE the
+    // first reconnect can occur.
+    if (!mkt_tls.connect_now().ok()) return 1;
+    if (!mkt.open().ok()) return 1;
+    Subscription sm{"trades"_v, sym};
+    static_cast<void>(mkt.subscribe(Slice<const Subscription>{&sm, 1}));
+    m_sess.ws_open_ = true; m_sess.last_activity_at_ms_ = now_ms();
+
+    if (!usr_tls.connect_now().ok()) return 1;
+    if (!us.open().ok()) return 1;
+    static_cast<void>(us.login(cli.signer, now_ms()));
     Subscription u1{"orders"_v, sym}, u2{"account"_v, ""_v};
     Subscription ua[2] = {u1, u2};
-    us.subscribe(Slice<const Subscription>{ua, 2});
+    static_cast<void>(us.subscribe(Slice<const Subscription>{ua, 2}));
+    u_sess.ws_open_ = true; u_sess.last_activity_at_ms_ = now_ms();
 
     // 8. Driver.
     Live_Driver<Chan_Live_Strategy, Ext::Tls_Mbedtls_Stream,
@@ -102,6 +128,8 @@ int main(int argc, char** argv) {
 
     // 10. Event loop.
     u64 last_data_ms = now_ms();
+    u64 last_fills   = recon.fills_applied;
+    i64 last_utc_day = now_ms() / 86400000LL;   // UTC midnight buckets
     while (g_run) {
         i64 n = now_ms();
 
@@ -109,24 +137,49 @@ int main(int argc, char** argv) {
         { auto ks = Files::read_result("/tmp/spp_kill"_v);
           if (ks.ok()) break; }
 
-        // Stale-data warning (>5min no trades).
+        // UTC day rollover: reset the daily risk window (start equity,
+        // trade count, daily PnL, halt flag) so daily_loss_limit_pct and
+        // max_daily_trades are measured per-day, not since-process-start.
+        if (n / 86400000LL != last_utc_day) {
+            rcheck.new_day(strat.acc.total_equity());
+            last_utc_day = n / 86400000LL;
+            last_data_ms = n;   // don't let a quiet rollover trip the watchdog
+        }
+
+        // Stale-data watchdog (>5min no trades): pong may still flow while
+        // OKX has silently dropped the subscription.  The TCP socket is
+        // still alive, so poll() won't wake on it — force a SYNCHRONOUS
+        // reconnect here (close + handshake + resubscribe).  Done inline
+        // rather than via the session recv path so we neither depend on
+        // poll() waking a fd we just closed nor risk swallowing a real
+        // frame returned by recv_or_reconnect.
         if (n - (i64)last_data_ms > 5 * 60 * 1000) {
-            // Pong is still flowing, but trades stopped — OKX may have
-            // dropped the subscription silently.  Recover by forcing a
-            // WS reconnect.
-            mkt.ws.reset(); mt.close();
-            mt.connect_result("ws.okx.com"_v, 8443);
-            mkt.open(); mkt.resubscribe_all();
+            mkt_tls.tls.close();
+            if (mkt_tls.connect_now().ok() && mkt.open().ok()) {
+                static_cast<void>(mkt.resubscribe_all());
+                m_sess.ws_open_ = true;
+                m_sess.last_activity_at_ms_ = n;
+            } else {
+                m_sess.ws_open_ = false;  // unhealthy; retry next watchdog tick
+            }
             last_data_ms = n;
         }
 
-        auto r = poll_either(mt, ut, 500);
+        // Session-aware multiplexed pump: heartbeats + reconnect + pong
+        // collapse are handled inside.  A transient error (e.g.
+        // backoff_pending mid-reconnect) is not fatal — yield and retry.
+        auto r = drv.pump_either_session(mkt_tls.tls, usr_tls.tls,
+                                          m_sess, u_sess, 500, n);
         if (!r.ok()) { Thread::sleep(100); continue; }
-        if (ready_market(r.unwrap())) {
-            auto mr = drv.pump_market_once(n);
-            if (mr.ok()) last_data_ms = n;
+        if (ready_market(r.unwrap())) last_data_ms = n;
+
+        // Enforce max_daily_trades: count each newly-applied fill from the
+        // reconciler as a trade so check_order's daily-trade cap is live.
+        if (recon.fills_applied != last_fills) {
+            rcheck.state.daily_trades +=
+                static_cast<u32>(recon.fills_applied - last_fills);
+            last_fills = recon.fills_applied;
         }
-        if (ready_user(r.unwrap())) static_cast<void>(drv.pump_user_once(us));
 
         // Keep the risk circuit-breakers LIVE.  Risk_Checker's daily-loss
         // and drawdown gates act on `state` that only record_trade /
