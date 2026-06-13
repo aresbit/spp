@@ -18,7 +18,7 @@ namespace spp::IO {
     if(has_any(ev, Poll_Event::out)) out |= POLLOUT;
     if(has_any(ev, Poll_Event::err)) out |= POLLERR;
     if(has_any(ev, Poll_Event::hup)) out |= POLLHUP;
-    return out ? out : POLLIN;
+    return out;
 }
 
 [[nodiscard]] static Poll_Event from_poll_mask(short revents) noexcept {
@@ -151,14 +151,23 @@ namespace spp::IO {
     if(ret < 0) return IO_Result<Poll_Result>::err(Log::sys_error());
     if(ret == 0) return IO_Result<Poll_Result>::err("timeout"_v);
 
+    // Populate every target's `revents` first — multiple sockets may
+    // be ready in one wakeup, and callers that multiplex (e.g. the
+    // OKX live driver) need to see ALL of them, not just the first.
+    u64 first_ready = targets.length();
+    Poll_Event first_ev = Poll_Event::none;
     for(u64 i = 0; i < fds.length(); i++) {
         auto ev = from_poll_mask(fds[i].revents);
         targets[i].revents = ev;
-        if(ev != Poll_Event::none) {
-            return IO_Result<Poll_Result>::ok(Poll_Result{i, ev});
+        if(ev != Poll_Event::none && first_ready == targets.length()) {
+            first_ready = i;
+            first_ev = ev;
         }
     }
-    return IO_Result<Poll_Result>::err("no_events"_v);
+    if(first_ready == targets.length()) {
+        return IO_Result<Poll_Result>::err("no_events"_v);
+    }
+    return IO_Result<Poll_Result>::ok(Poll_Result{first_ready, first_ev});
 }
 
 [[nodiscard]] IO_Result<bool> poll_one_result(const Handle& handle, Poll_Event events,

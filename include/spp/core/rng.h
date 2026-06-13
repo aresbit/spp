@@ -28,12 +28,14 @@ struct Stream {
     template<Float F>
     [[nodiscard]] constexpr F unit() noexcept {
         if constexpr(Same<F, f32>) {
+            // 24 random bits scaled by 2^-24 (not 10^-24): produces [0, 1).
             u64 r = operator()() >> 40;
-            return r * 1e-24f;
+            return static_cast<f32>(r) * 0x1p-24f;
         } else {
             static_assert(Same<F, f64>);
+            // 53 random bits scaled by 2^-53 (not 10^-53): produces [0, 1).
             u64 r = operator()() >> 11;
-            return r * 1e-53;
+            return static_cast<f64>(r) * 0x1p-53;
         }
     }
 

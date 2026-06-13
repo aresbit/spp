@@ -1,7 +1,12 @@
 build/
 debug.log
 tests/debug.log
-tests/*.corrected
-tests/*/*.corrected
+*.corrected
 bench/current.tsv
+bench/spsc/bin/
+bench/spsc/build/
 .self*
+
+# Runtime / test artifacts
+*.wal
+okx_wal_test.bin

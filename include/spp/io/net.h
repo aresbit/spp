@@ -33,6 +33,47 @@ private:
     friend struct Udp;
 };
 
+// Blocking TCP client. Builds a connected socket via getaddrinfo, exposes a
+// byte-stream API on top of IO::Handle, and is the layer protocol/http.h and
+// protocol/websocket.h consume. TLS is intentionally not provided here — see
+// docs/binance_integration.md for the integration shape.
+struct Tcp_Client {
+    Tcp_Client() noexcept = default;
+    ~Tcp_Client() noexcept {
+        close();
+    }
+
+    Tcp_Client(const Tcp_Client&) noexcept = delete;
+    Tcp_Client& operator=(const Tcp_Client&) noexcept = delete;
+
+    Tcp_Client(Tcp_Client&& src) noexcept;
+    Tcp_Client& operator=(Tcp_Client&& src) noexcept;
+
+    // Resolves host (DNS or numeric) and connects to port.
+    [[nodiscard]] Result<u64, String_View> connect_result(String_View host, u16 port) noexcept;
+
+    // Sends every byte or returns an error.
+    [[nodiscard]] Result<u64, String_View> send_all_result(Slice<const u8> in) noexcept;
+
+    // Reads up to out.length() bytes. Returns 0 on EOF.
+    [[nodiscard]] Result<u64, String_View> recv_result(Slice<u8> out) noexcept;
+
+    // Reads exactly out.length() bytes; reports short_read on EOF before that.
+    [[nodiscard]] Result<u64, String_View> recv_exact_result(Slice<u8> out) noexcept;
+
+    void close() noexcept;
+
+    [[nodiscard]] bool valid() const noexcept {
+        return handle_.valid();
+    }
+    [[nodiscard]] const IO::Handle& handle() const noexcept {
+        return handle_;
+    }
+
+private:
+    IO::Handle handle_;
+};
+
 struct Udp {
     struct Data {
         u64 length;

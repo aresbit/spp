@@ -9,6 +9,12 @@ struct Lockfree_Ring {
 private:
     struct Cell {
         Thread::Atomic sequence;
+        // Producer cancellation flag. Set by cancel_write_ to mark a CAS-claimed
+        // slot as skipped. The consumer detects it during try_reserve_read,
+        // bumps the sequence to the next round, and continues without yielding a
+        // user-visible value. Without this, cancelling a claimed slot would
+        // permanently desync enqueue/dequeue positions and deadlock readers.
+        Thread::Atomic cancelled;
         Storage<T> storage;
     };
 
@@ -255,6 +261,13 @@ public:
             i64 dif = seq - static_cast<i64>(pos + 1);
             if(dif == 0) {
                 if(cas_u64_(dequeue_pos_, pos, pos + 1)) {
+                    if(cell->cancelled.load() != 0) {
+                        static_cast<void>(cell->cancelled.exchange(0));
+                        static_cast<void>(
+                            cell->sequence.exchange(static_cast<i64>(pos + mask_ + 1)));
+                        pos = static_cast<u64>(dequeue_pos_.load());
+                        continue;
+                    }
                     return Read_Reservation{this, cell, pos};
                 }
             } else if(dif < 0) {
@@ -309,6 +322,7 @@ private:
         for(u64 i = 0; i < capacity_; i++) {
             new(&cells_[i]) Cell{};
             static_cast<void>(cells_[i].sequence.exchange(static_cast<i64>(i)));
+            static_cast<void>(cells_[i].cancelled.exchange(0));
         }
         static_cast<void>(enqueue_pos_.exchange(0));
         static_cast<void>(dequeue_pos_.exchange(0));
@@ -349,7 +363,13 @@ private:
     }
 
     void cancel_write_(Cell* cell, u64 pos) noexcept {
-        static_cast<void>(cell->sequence.exchange(static_cast<i64>(pos)));
+        // The slot was already CAS-claimed by us, so a stale enqueue_pos_ is
+        // committed past this position. We must keep the ring's sequence/position
+        // invariant intact, so flag the slot for skip-on-read and signal it as
+        // consumable. The consumer side skips it without yielding a value and
+        // advances the cell sequence to the next round.
+        static_cast<void>(cell->cancelled.exchange(1));
+        static_cast<void>(cell->sequence.exchange(static_cast<i64>(pos + 1)));
     }
 
     void commit_read_(Cell* cell, u64 pos) noexcept {

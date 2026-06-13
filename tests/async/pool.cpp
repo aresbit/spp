@@ -373,5 +373,58 @@ i32 main() {
             events[1].reset();
         }
     }
+    // Pool shutdown drain regression: pending continuations (held in
+    // state.jobs, pending_event_jobs, and events_to_enqueue) used to either
+    // leak their coroutine frames or be destroyed out-of-order at ~Pool().
+    // The drain phase must now resume them so each frame either finishes
+    // normally or is reaped by the still-live Task<R> wrapper. We verify by
+    // counting RAII tracker construct/destruct pairs across a pool that gets
+    // torn down with pending suspensions.
+    {
+        struct Tracker {
+            i64* counter = null;
+            Tracker() noexcept = default;
+            explicit Tracker(i64* c) noexcept : counter(c) {
+                if(counter) (*counter)++;
+            }
+            ~Tracker() noexcept {
+                if(counter) (*counter)--;
+            }
+            Tracker(const Tracker&) noexcept = delete;
+            Tracker& operator=(const Tracker&) noexcept = delete;
+            Tracker(Tracker&& src) noexcept : counter(src.counter) {
+                src.counter = null;
+            }
+            Tracker& operator=(Tracker&& src) noexcept {
+                counter = src.counter;
+                src.counter = null;
+                return *this;
+            }
+        };
+
+        i64 alive = 0;
+        {
+            Async::Pool pool;
+
+            auto spawn_pending = [&pool_ = pool, &alive_ = alive]() -> Async::Task<i32> {
+                auto& pool = pool_;
+                Tracker tracker{&alive_};
+                co_await pool.suspend();
+                co_await pool.suspend();
+                Async::Event ev;
+                co_await pool.event(spp::move(ev));
+                co_return 1;
+            };
+
+            // Detached tasks: the Task<R> wrappers go out of scope while the
+            // underlying coroutines are still suspended somewhere inside the
+            // pool. Without the drain fix this leaks every Tracker.
+            for(u32 i = 0; i < 16; i++) {
+                static_cast<void>(spawn_pending());
+            }
+            // ~Pool runs here and must resume + finalize every pending frame.
+        }
+        assert(alive == 0);
+    }
     return 0;
 }

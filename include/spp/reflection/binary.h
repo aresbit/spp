@@ -181,12 +181,10 @@ struct Writer {
     }
 
     void push_f32(f32 v) noexcept {
-        u32 raw = *reinterpret_cast<u32*>(&v);
-        push_u32(raw);
+        push_u32(__builtin_bit_cast(u32, v));
     }
     void push_f64(f64 v) noexcept {
-        u64 raw = *reinterpret_cast<u64*>(&v);
-        push_u64(raw);
+        push_u64(__builtin_bit_cast(u64, v));
     }
 
     void append(Slice<const u8> bytes) noexcept {
@@ -266,14 +264,14 @@ struct Reader {
     [[nodiscard]] Result<f32, String_View> read_f32() noexcept {
         auto v = read_u32();
         if(!v.ok()) return Result<f32, String_View>::err(spp::move(v.unwrap_err()));
-        f32 out = *reinterpret_cast<f32*>(&v.unwrap());
+        f32 out = __builtin_bit_cast(f32, v.unwrap());
         return Result<f32, String_View>::ok(spp::move(out));
     }
 
     [[nodiscard]] Result<f64, String_View> read_f64() noexcept {
         auto v = read_u64();
         if(!v.ok()) return Result<f64, String_View>::err(spp::move(v.unwrap_err()));
-        f64 out = *reinterpret_cast<f64*>(&v.unwrap());
+        f64 out = __builtin_bit_cast(f64, v.unwrap());
         return Result<f64, String_View>::ok(spp::move(out));
     }
 
@@ -395,6 +393,7 @@ Result<R, String_View> decode_record_value(Reader& r) noexcept
 template<Reflectable T, Allocator A>
 Result<u64, String_View> encode_value(Writer<A>& w, const T& value) noexcept {
     using R = Reflect::Refl<T>;
+    u64 start = w.out.length();
 
     if constexpr(R::kind == Reflect::Kind::i8_) {
         w.push_u8(static_cast<u8>(Wire_Kind::i8));
@@ -485,7 +484,7 @@ Result<u64, String_View> encode_value(Writer<A>& w, const T& value) noexcept {
     } else {
         return Result<u64, String_View>::err("binary_unsupported_type"_v);
     }
-    return Result<u64, String_View>::ok(1);
+    return Result<u64, String_View>::ok(w.out.length() - start);
 }
 
 template<Reflectable T>

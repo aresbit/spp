@@ -30,6 +30,25 @@ i32 main() {
 
         auto fmt = format<Mdefault>("% % %"_v, D2::from_raw(-1205), D2::from_raw(0), D2::from_raw(3));
         assert(fmt == "-12.05 0.00 0.03"_v);
+
+        // Compound assignment and helper accessors.
+        D2 acc = D2::from_raw(1000);
+        acc *= D2::from_raw(200);  // 10.00 * 2.00 = 20.00
+        assert(acc.raw() == 2000);
+        acc /= D2::from_raw(400);  // 20.00 / 4.00 = 5.00
+        assert(acc.raw() == 500);
+
+        assert(D2::from_raw(-1).is_negative());
+        assert(!D2::from_raw(0).is_negative());
+        assert(D2::from_raw(-7).abs_result().unwrap().raw() == 7);
+        assert(D2::from_raw(7).abs_result().unwrap().raw() == 7);
+        assert(D2::from_raw(7).negate_result().unwrap().raw() == -7);
+
+        auto int_ok = D2::from_int_result(42);
+        assert(int_ok.ok());
+        assert(int_ok.unwrap().raw() == 4200);
+        auto int_overflow = D2::from_int_result(Limits<i64>::max() / 50);
+        assert(!int_overflow.ok());
     }
 
     Trace("Deterministic time and duration") {
@@ -45,6 +64,23 @@ i32 main() {
 
         auto printed = format<Mdefault>("% %"_v, d0, t1);
         assert(printed.length() > 0);
+
+        // Overflow-checked duration arithmetic.
+        auto add_ok = d0.add_result(Deterministic_Duration::from_ms(500));
+        assert(add_ok.ok());
+        assert(add_ok.unwrap().ms() == 2000);
+
+        Deterministic_Duration big = Deterministic_Duration::from_ns(Limits<i64>::max());
+        auto add_overflow = big.add_result(Deterministic_Duration::from_ns(1));
+        assert(!add_overflow.ok());
+
+        Deterministic_Duration tiny = Deterministic_Duration::from_ns(Limits<i64>::min());
+        auto sub_overflow = tiny.sub_result(Deterministic_Duration::from_ns(1));
+        assert(!sub_overflow.ok());
+
+        assert(d0 >= Deterministic_Duration::from_ms(1500));
+        assert(d0 > Deterministic_Duration::from_ms(1000));
+        assert(d0 <= Deterministic_Duration::from_ms(2000));
     }
 
     return 0;

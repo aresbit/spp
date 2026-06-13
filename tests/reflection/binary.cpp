@@ -93,6 +93,34 @@ i32 main() {
         assert(got.side == now.side);
     }
 
+    Trace("Binary float round trip and byte-accurate encode size") {
+        // Verifies the bit_cast fix for push_f32/f64 + read_f32/f64 (previously
+        // type-punned via reinterpret_cast — strict-aliasing UB) and that
+        // encode_value's returned byte count reflects bytes actually written.
+        struct Floats {
+            f32 a = 0.0f;
+            f64 b = 0.0;
+        };
+        // Inline-style registration since this is a local test type.
+        Binary::detail::Writer<Mdefault> w;
+        auto enc32 = Binary::detail::encode_value(w, 3.5f);
+        assert(enc32.ok());
+        // 1 byte kind tag + 4 bytes payload.
+        assert(enc32.unwrap() == 5);
+        auto enc64 = Binary::detail::encode_value(w, -2.5);
+        assert(enc64.ok());
+        assert(enc64.unwrap() == 9);
+
+        Binary::detail::Reader r{w.out.slice(), 0};
+        auto a = Binary::detail::decode_value<f32>(r);
+        assert(a.ok());
+        assert(a.unwrap() == 3.5f);
+        auto b = Binary::detail::decode_value<f64>(r);
+        assert(b.ok());
+        assert(b.unwrap() == -2.5);
+        assert(r.i == r.in.length());
+    }
+
     Trace("Binary persist/load") {
         String_View path = "tmp_trade.bin"_v;
         TradeV2 in{};

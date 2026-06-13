@@ -343,8 +343,102 @@ inline void skip_ws(Cursor& c) noexcept {
     return Result<String<Mdefault>, String_View>::err("json_unterminated_string"_v);
 }
 
+// Type traits used to dispatch parse_value to the right per-shape parser.
+// Mirrors the helpers in spp/reflection/binary.h.
+template<typename T>
+struct Is_Vec_J {
+    constexpr static bool value = false;
+};
+template<typename T, Allocator A>
+struct Is_Vec_J<Vec<T, A>> {
+    constexpr static bool value = true;
+};
+template<typename T>
+constexpr bool is_vec_j = Is_Vec_J<Decay<T>>::value;
+
+template<typename T>
+struct Vec_Of_J;
+template<typename T, Allocator A>
+struct Vec_Of_J<Vec<T, A>> {
+    using elem = T;
+    using alloc = A;
+};
+
+template<typename T>
+struct Is_Opt_J {
+    constexpr static bool value = false;
+};
+template<typename T>
+struct Is_Opt_J<Opt<T>> {
+    constexpr static bool value = true;
+};
+template<typename T>
+constexpr bool is_opt_j = Is_Opt_J<Decay<T>>::value;
+
+template<typename T>
+struct Opt_Of_J;
+template<typename T>
+struct Opt_Of_J<Opt<T>> {
+    using elem = T;
+};
+
 template<typename T>
 [[nodiscard]] inline Result<T, String_View> parse_value(Cursor& c) noexcept;
+
+// Consume one JSON value (object/array/string/number/literal) without
+// parsing it into a typed result. Used to forward-skip unknown record
+// fields so schema evolution at the server doesn't fail us at the client.
+[[nodiscard]] inline Result<u64, String_View> skip_value(Cursor& c) noexcept {
+    skip_ws(c);
+    if(c.i >= c.s.length()) return Result<u64, String_View>::err("json_unexpected_eof"_v);
+    u8 ch = c.s[c.i];
+    if(ch == '{' || ch == '[') {
+        u8 open = ch;
+        u8 close = ch == '{' ? '}' : ']';
+        i64 depth = 0;
+        bool in_str = false;
+        bool esc = false;
+        for(; c.i < c.s.length(); c.i++) {
+            u8 k = c.s[c.i];
+            if(esc) {
+                esc = false;
+                continue;
+            }
+            if(in_str) {
+                if(k == '\\') esc = true;
+                else if(k == '"') in_str = false;
+                continue;
+            }
+            if(k == '"') {
+                in_str = true;
+                continue;
+            }
+            if(k == open) depth++;
+            else if(k == close) {
+                depth--;
+                if(depth == 0) {
+                    c.i++;
+                    return Result<u64, String_View>::ok(static_cast<u64>(0));
+                }
+            }
+        }
+        return Result<u64, String_View>::err("json_unbalanced_container"_v);
+    }
+    if(ch == '"') {
+        auto s = parse_string(c);
+        if(!s.ok()) return Result<u64, String_View>::err(spp::move(s.unwrap_err()));
+        return Result<u64, String_View>::ok(static_cast<u64>(0));
+    }
+    // number / true / false / null — consume until a structural break.
+    while(c.i < c.s.length()) {
+        u8 k = c.s[c.i];
+        if(k == ',' || k == '}' || k == ']' || k == ' ' || k == '\t' || k == '\n' || k == '\r') {
+            break;
+        }
+        c.i++;
+    }
+    return Result<u64, String_View>::ok(static_cast<u64>(0));
+}
 
 template<typename T, Allocator A>
 [[nodiscard]] inline Result<Vec<T, A>, String_View> parse_array(Cursor& c) noexcept {
@@ -377,6 +471,107 @@ template<typename T, Allocator A>
         }
         c.i++;
     }
+}
+
+// Field visitor used by parse_record. Matches the iterate_record contract
+// (apply<Field>(name, ref)) and parses the JSON value into `field` when the
+// name matches the wanted key.
+template<typename R>
+struct Json_Field_Parser {
+    template<typename F>
+    void apply(const Literal& name, F& field) noexcept {
+        if(matched) return;
+        if(String_View{name} != want_name) return;
+        using V = Decay<F>;
+        auto parsed = parse_value<V>(*cursor);
+        if(!parsed.ok()) {
+            ok = false;
+            err = spp::move(parsed.unwrap_err());
+            return;
+        }
+        field = spp::move(parsed.unwrap());
+        matched = true;
+    }
+
+    Cursor* cursor = null;
+    String_View want_name;
+    bool matched = false;
+    bool ok = true;
+    String_View err;
+};
+
+template<Reflect::Record R>
+    requires Default_Constructable<R>
+[[nodiscard]] inline Result<R, String_View> parse_record(Cursor& c) noexcept {
+    skip_ws(c);
+    if(c.i >= c.s.length() || c.s[c.i] != '{') {
+        return Result<R, String_View>::err("json_expected_object"_v);
+    }
+    c.i++;
+    R out{};
+    skip_ws(c);
+    if(c.i < c.s.length() && c.s[c.i] == '}') {
+        c.i++;
+        return Result<R, String_View>::ok(spp::move(out));
+    }
+    for(;;) {
+        skip_ws(c);
+        auto key = parse_string(c);
+        if(!key.ok()) return Result<R, String_View>::err(spp::move(key.unwrap_err()));
+        auto key_owned = spp::move(key.unwrap());
+        String_View key_sv = key_owned.view();
+        skip_ws(c);
+        if(c.i >= c.s.length() || c.s[c.i] != ':') {
+            return Result<R, String_View>::err("json_expected_colon"_v);
+        }
+        c.i++;
+
+        Json_Field_Parser<R> fp;
+        fp.cursor = &c;
+        fp.want_name = key_sv;
+        Reflect::iterate_record(fp, out);
+        if(!fp.ok) {
+            return Result<R, String_View>::err(spp::move(fp.err));
+        }
+        if(!fp.matched) {
+            // Unknown field — silently skip so additions on the server side
+            // don't break older clients.
+            auto skipped = skip_value(c);
+            if(!skipped.ok()) {
+                return Result<R, String_View>::err(spp::move(skipped.unwrap_err()));
+            }
+        }
+
+        skip_ws(c);
+        if(c.i >= c.s.length()) {
+            return Result<R, String_View>::err("json_unterminated_object"_v);
+        }
+        if(c.s[c.i] == '}') {
+            c.i++;
+            return Result<R, String_View>::ok(spp::move(out));
+        }
+        if(c.s[c.i] != ',') {
+            return Result<R, String_View>::err("json_expected_comma"_v);
+        }
+        c.i++;
+    }
+}
+
+template<Reflect::Enum E>
+[[nodiscard]] inline Result<E, String_View> parse_enum(Cursor& c) noexcept {
+    auto s = parse_string(c);
+    if(!s.ok()) return Result<E, String_View>::err(spp::move(s.unwrap_err()));
+    String_View name_sv = s.unwrap().view();
+    Opt<E> result;
+    Reflect::iterate_enum<E>([&](auto Case) {
+        if(String_View{decltype(Case)::name} == name_sv) {
+            result = Opt<E>{decltype(Case)::value};
+        }
+    });
+    if(!result.ok()) {
+        return Result<E, String_View>::err("json_unknown_enum_value"_v);
+    }
+    return Result<E, String_View>::ok(spp::move(*result));
 }
 
 template<typename T>
@@ -424,6 +619,25 @@ template<typename T>
         } else {
             T value = spp::move(parsed.unwrap());
             return Result<T, String_View>::ok(spp::move(value));
+        }
+    } else if constexpr(is_vec_j<T>) {
+        return parse_array<typename Vec_Of_J<T>::elem, typename Vec_Of_J<T>::alloc>(c);
+    } else if constexpr(is_opt_j<T>) {
+        // Accept either `null` or a value of the inner type.
+        if(c.i + 4 <= c.s.length() && c.s.sub(c.i, c.i + 4) == "null"_v) {
+            c.i += 4;
+            return Result<T, String_View>::ok(T{});
+        }
+        auto inner = parse_value<typename Opt_Of_J<T>::elem>(c);
+        if(!inner.ok()) return Result<T, String_View>::err(spp::move(inner.unwrap_err()));
+        return Result<T, String_View>::ok(T{spp::move(inner.unwrap())});
+    } else if constexpr(Reflect::Enum<T>) {
+        return parse_enum<T>(c);
+    } else if constexpr(Reflect::Record<T>) {
+        if constexpr(Default_Constructable<T>) {
+            return parse_record<T>(c);
+        } else {
+            return Result<T, String_View>::err("json_record_default_ctor_required"_v);
         }
     } else {
         return Result<T, String_View>::err("json_parse_unsupported_type"_v);

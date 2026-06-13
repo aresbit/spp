@@ -150,6 +150,35 @@ struct Decimal {
         *this = *this - rhs;
         return *this;
     }
+    Decimal& operator*=(const Decimal& rhs) noexcept {
+        *this = *this * rhs;
+        return *this;
+    }
+    Decimal& operator/=(const Decimal& rhs) noexcept {
+        *this = *this / rhs;
+        return *this;
+    }
+
+    [[nodiscard]] constexpr bool is_negative() const noexcept {
+        return raw_ < 0;
+    }
+    [[nodiscard]] Result<Decimal, String_View> negate_result() const noexcept {
+        if(raw_ == Limits<i64>::min()) {
+            return Result<Decimal, String_View>::err("overflow"_v);
+        }
+        return Result<Decimal, String_View>::ok(Decimal{-raw_});
+    }
+    [[nodiscard]] Result<Decimal, String_View> abs_result() const noexcept {
+        if(raw_ >= 0) return Result<Decimal, String_View>::ok(Decimal{raw_});
+        return negate_result();
+    }
+    [[nodiscard]] static Result<Decimal, String_View> from_int_result(i64 whole) noexcept {
+        i64 out = 0;
+        if(!checked_mul_(whole, static_cast<i64>(factor()), out)) {
+            return Result<Decimal, String_View>::err("overflow"_v);
+        }
+        return Result<Decimal, String_View>::ok(Decimal{out});
+    }
 
     [[nodiscard]] constexpr bool operator==(const Decimal& rhs) const noexcept = default;
     [[nodiscard]] constexpr bool operator<(const Decimal& rhs) const noexcept {
@@ -263,6 +292,15 @@ struct Deterministic_Duration {
     [[nodiscard]] constexpr bool operator<(const Deterministic_Duration& rhs) const noexcept {
         return ns_ < rhs.ns_;
     }
+    [[nodiscard]] constexpr bool operator>(const Deterministic_Duration& rhs) const noexcept {
+        return rhs < *this;
+    }
+    [[nodiscard]] constexpr bool operator<=(const Deterministic_Duration& rhs) const noexcept {
+        return !(rhs < *this);
+    }
+    [[nodiscard]] constexpr bool operator>=(const Deterministic_Duration& rhs) const noexcept {
+        return !(*this < rhs);
+    }
     [[nodiscard]] constexpr Deterministic_Duration
     operator+(const Deterministic_Duration& rhs) const noexcept {
         return Deterministic_Duration{ns_ + rhs.ns_};
@@ -270,6 +308,25 @@ struct Deterministic_Duration {
     [[nodiscard]] constexpr Deterministic_Duration
     operator-(const Deterministic_Duration& rhs) const noexcept {
         return Deterministic_Duration{ns_ - rhs.ns_};
+    }
+
+    [[nodiscard]] Result<Deterministic_Duration, String_View>
+    add_result(const Deterministic_Duration& rhs) const noexcept {
+        if((rhs.ns_ > 0 && ns_ > Limits<i64>::max() - rhs.ns_) ||
+           (rhs.ns_ < 0 && ns_ < Limits<i64>::min() - rhs.ns_)) {
+            return Result<Deterministic_Duration, String_View>::err("overflow"_v);
+        }
+        return Result<Deterministic_Duration, String_View>::ok(
+            Deterministic_Duration{ns_ + rhs.ns_});
+    }
+    [[nodiscard]] Result<Deterministic_Duration, String_View>
+    sub_result(const Deterministic_Duration& rhs) const noexcept {
+        if((rhs.ns_ < 0 && ns_ > Limits<i64>::max() + rhs.ns_) ||
+           (rhs.ns_ > 0 && ns_ < Limits<i64>::min() + rhs.ns_)) {
+            return Result<Deterministic_Duration, String_View>::err("overflow"_v);
+        }
+        return Result<Deterministic_Duration, String_View>::ok(
+            Deterministic_Duration{ns_ - rhs.ns_});
     }
 
 private:

@@ -118,7 +118,11 @@ void Mutex::unlock() noexcept {
 }
 
 [[nodiscard]] i64 Atomic::load() const noexcept {
-    return value_;
+    // A plain read of value_ is not safe: the compiler can hoist or fold it inside
+    // polling loops (e.g. the Vyukov MPMC ring or shutdown flags), producing stale
+    // results and breaking lock-free invariants. InterlockedCompareExchange64
+    // issues a full memory barrier and returns the current value without modifying it.
+    return InterlockedCompareExchange64(const_cast<LONG64*>(&value_), 0, 0);
 }
 
 i64 Atomic::incr() noexcept {

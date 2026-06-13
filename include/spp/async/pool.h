@@ -75,6 +75,11 @@ struct Pool {
         event_thread = Thread::Thread([this] { do_events(); });
     }
     ~Pool() noexcept {
+        // Phase 1: stop the producers of new work.
+        // Setting shutdown first means workers / event_thread observe it the
+        // next time they wake. Joining them here guarantees no other thread is
+        // touching state.jobs, events_to_enqueue, or pending_event_jobs during
+        // the drain phase below.
         shutdown.exchange(true);
 
         for(auto& state : thread_states) {
@@ -89,15 +94,53 @@ struct Pool {
         }
         event_thread.join();
 
-        pending_events.clear();
+        // Phase 2: drain all still-pending continuations on this thread.
+        //
+        // The naive prior implementation either dropped these handles (leaking
+        // the entire coroutine frame for everything in pending_event_jobs and
+        // events_to_enqueue) or called handle.destroy() on them out-of-order
+        // (UB if a user-held Task<R> wrapper later read promise.state).
+        //
+        // Synchronously resuming each pending handle lets the coroutine run to
+        // its next suspension point or to Final_Suspend. Final_Suspend honours
+        // the Task<R> abandonment protocol: if the wrapper was already
+        // destroyed the frame is freed; if the wrapper is still alive the
+        // frame stays valid for Task<R>::~Task to reap on TASK_DONE.
+        //
+        // Re-suspensions during drain push back into the queues; the loop
+        // continues until the system reaches a quiescent state. Awaiters that
+        // were waiting on real OS events resume immediately (the event never
+        // fired) — this is interpreted as a graceful shutdown interrupt.
+        for(;;) {
+            bool any = false;
 
-        for(auto& state : thread_states) {
-            for(auto& job : state.jobs) {
-                // This still leaks pending continuations, as we can't control their destruction
-                // order wrt their waiting tasks.
-                job.handle.destroy();
+            while(!events_to_enqueue.empty()) {
+                auto pending = spp::move(events_to_enqueue.back());
+                events_to_enqueue.pop();
+                pending.second.handle.resume();
+                any = true;
             }
+
+            while(!pending_event_jobs.empty()) {
+                auto job = spp::move(pending_event_jobs.back());
+                pending_event_jobs.pop();
+                job.handle.resume();
+                any = true;
+            }
+
+            for(auto& state : thread_states) {
+                while(!state.jobs.empty()) {
+                    auto job = spp::move(state.jobs.front());
+                    state.jobs.pop();
+                    job.handle.resume();
+                    any = true;
+                }
+            }
+
+            if(!any) break;
         }
+
+        pending_events.clear();
     }
 
     Pool(const Pool&) noexcept = delete;

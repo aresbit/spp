@@ -54,6 +54,45 @@ i32 main() {
             pub.cancel();
             assert(!bus.try_reserve_consume().ok());
         }
+
+        // Cancel-then-reuse: a cancelled slot must not strand the ring. Prior to
+        // the cancel_write_ fix, the next-round writer at the cancelled slot
+        // would spin forever because the cell sequence stayed at pos (write-
+        // ready state for the cancelled round). With the fix, the cancel marks
+        // the cell as skip-on-read, and the consumer's skip path advances the
+        // sequence to pos+capacity, restoring write-readiness.
+        //
+        // The first try_reserve_consume above triggered the skip for the
+        // cancelled slot, so the queue is back to a fully usable state and a
+        // full capacity worth of publishes must all succeed.
+        for(u32 i = 0; i < 4; i++) {
+            assert(bus.try_publish_emplace(static_cast<i64>(100 + i), 0, 0));
+        }
+        for(u32 i = 0; i < 4; i++) {
+            auto got = bus.try_recv();
+            assert(got.ok());
+            assert(got->id == static_cast<i64>(100 + i));
+        }
+        assert(!bus.try_recv().ok());
+
+        // Another cancel cycle followed by a skip-driving recv must recover too.
+        {
+            auto pub = bus.try_reserve_publish();
+            assert(pub.ok());
+            assert(pub.emplace(200, 0, 0));
+            pub.cancel();
+        }
+        // Drive the consumer-side skip path so the cancelled slot returns to
+        // write-ready before the next round of publishes.
+        assert(!bus.try_recv().ok());
+        for(u32 i = 0; i < 4; i++) {
+            assert(bus.try_publish_emplace(static_cast<i64>(300 + i), 0, 0));
+        }
+        for(u32 i = 0; i < 4; i++) {
+            auto got = bus.try_recv();
+            assert(got.ok());
+            assert(got->id == static_cast<i64>(300 + i));
+        }
     }
 
     Trace("Lockfree ring MPMC") {
