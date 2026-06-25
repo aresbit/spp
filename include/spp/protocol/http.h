@@ -159,7 +159,7 @@ namespace detail {
 
 template<Allocator A = Mdefault>
 [[nodiscard]] Result<Response<A>, String_View>
-parse_response(Slice<const u8> bytes) noexcept {
+parse_response_headers(Slice<const u8> bytes, u64& headers_end) noexcept {
     using Err = Result<Response<A>, String_View>;
     if(!detail::starts_with(bytes, "HTTP/1.")) {
         return Err::err("http_bad_status_line"_v);
@@ -209,18 +209,63 @@ parse_response(Slice<const u8> bytes) noexcept {
         pos = line_end + 2;
     }
 
+    headers_end = pos;
+    resp.body = Slice<const u8>{bytes.data() + pos, 0};
+    return Err::ok(spp::move(resp));
+}
+
+template<Allocator A = Mdefault>
+[[nodiscard]] Result<Response<A>, String_View>
+parse_response(Slice<const u8> bytes) noexcept {
+    using Err = Result<Response<A>, String_View>;
+    u64 headers_end = 0;
+    auto parsed = parse_response_headers<A>(bytes, headers_end);
+    if(!parsed.ok()) return Err::err(spp::move(parsed.unwrap_err()));
+
+    Response<A> resp = spp::move(parsed.unwrap());
     auto content_length = resp.find_header("Content-Length"_v);
     u64 body_len = 0;
     if(content_length.ok()) {
-        auto parsed = detail::parse_decimal_u64(*content_length);
-        if(!parsed.ok()) return Err::err(spp::move(parsed.unwrap_err()));
-        body_len = parsed.unwrap();
+        auto n = detail::parse_decimal_u64(*content_length);
+        if(!n.ok()) return Err::err(spp::move(n.unwrap_err()));
+        body_len = n.unwrap();
     }
 
-    if(pos + body_len > bytes.length()) return Err::err("http_body_truncated"_v);
-    resp.body = Slice<const u8>{bytes.data() + pos, body_len};
+    if(headers_end + body_len > bytes.length()) return Err::err("http_body_truncated"_v);
+    resp.body = Slice<const u8>{bytes.data() + headers_end, body_len};
+    return Err::ok(spp::move(resp));
+}
 
-    return Result<Response<A>, String_View>::ok(spp::move(resp));
+// Reads from `stream` until the headers terminator (\r\n\r\n) is seen and
+// returns the parsed response headers (body is empty). `headers_end` is set to
+// the byte offset immediately following the terminator, i.e. the start of the
+// response body. The caller can continue reading from `stream` at that boundary
+// for chunked or Content-Length bodies.
+template<typename S, Allocator A = Mdefault>
+    requires Net::Byte_Stream<S>
+[[nodiscard]] Result<Response<A>, String_View>
+read_response_headers(S& stream, Vec<u8, A>& buf, u64& headers_end) noexcept {
+    using Err = Result<Response<A>, String_View>;
+    headers_end = 0;
+    u8 chunk[2048];
+    for(;;) {
+        auto got = stream.recv_result(Slice<u8>{chunk, sizeof(chunk)});
+        if(!got.ok()) return Err::err(spp::move(got.unwrap_err()));
+        u64 n = got.unwrap();
+        if(n == 0) return Err::err("http_eof_in_headers"_v);
+        for(u64 i = 0; i < n; i++) buf.push(chunk[i]);
+        // Look for the terminator across the new bytes and the few before them.
+        u64 search_from = buf.length() - n > 3 ? buf.length() - n - 3 : 0;
+        for(u64 i = search_from; i + 3 < buf.length(); i++) {
+            if(buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' &&
+               buf[i + 3] == '\n') {
+                headers_end = i + 4;
+                break;
+            }
+        }
+        if(headers_end > 0) break;
+    }
+    return parse_response_headers<A>(buf.slice(), headers_end);
 }
 
 // Reads from `stream` until the headers terminator (\r\n\r\n) is seen, then
@@ -237,61 +282,34 @@ template<typename S, Allocator A = Mdefault>
     requires Net::Byte_Stream<S>
 [[nodiscard]] Result<Fetched_Response<A>, String_View>
 fetch(S& stream, const Request<A>& request) noexcept {
+    using Err = Result<Fetched_Response<A>, String_View>;
     auto wire = request.template to_bytes<A>();
     auto sent = stream.send_all_result(wire.slice());
-    if(!sent.ok()) {
-        return Result<Fetched_Response<A>, String_View>::err(spp::move(sent.unwrap_err()));
-    }
+    if(!sent.ok()) return Err::err(spp::move(sent.unwrap_err()));
 
     Vec<u8, A> buf(1024);
-    u8 chunk[2048];
     u64 headers_end = 0;
-    for(;;) {
-        auto got = stream.recv_result(Slice<u8>{chunk, sizeof(chunk)});
-        if(!got.ok()) {
-            return Result<Fetched_Response<A>, String_View>::err(spp::move(got.unwrap_err()));
-        }
-        u64 n = got.unwrap();
-        if(n == 0) {
-            return Result<Fetched_Response<A>, String_View>::err("http_eof_in_headers"_v);
-        }
-        for(u64 i = 0; i < n; i++) buf.push(chunk[i]);
-        // Look for the terminator across the new bytes and the few before them.
-        u64 search_from = buf.length() - n > 3 ? buf.length() - n - 3 : 0;
-        for(u64 i = search_from; i + 3 < buf.length(); i++) {
-            if(buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n') {
-                headers_end = i + 4;
-                break;
-            }
-        }
-        if(headers_end > 0) break;
-    }
+    auto preview = read_response_headers(stream, buf, headers_end);
+    if(!preview.ok()) return Err::err(spp::move(preview.unwrap_err()));
 
-    auto preview = parse_response<A>(buf.slice());
-    // preview may fail on body_truncated; we use it just to extract Content-Length.
     u64 content_length = 0;
-    if(preview.ok()) {
-        auto cl = preview.unwrap().find_header("Content-Length"_v);
-        if(cl.ok()) {
-            auto parsed = detail::parse_decimal_u64(*cl);
-            if(parsed.ok()) content_length = parsed.unwrap();
-        }
+    auto cl = preview.unwrap().find_header("Content-Length"_v);
+    if(cl.ok()) {
+        auto parsed = detail::parse_decimal_u64(*cl);
+        if(parsed.ok()) content_length = parsed.unwrap();
     }
 
     u64 already_have_body = buf.length() - headers_end;
+    u8 chunk[2048];
     while(already_have_body < content_length) {
         // Cap each read to (remaining body) so we don't slurp bytes that
         // belong to the next pipelined response on the same connection.
         u64 want = content_length - already_have_body;
         if(want > sizeof(chunk)) want = sizeof(chunk);
         auto got = stream.recv_result(Slice<u8>{chunk, want});
-        if(!got.ok()) {
-            return Result<Fetched_Response<A>, String_View>::err(spp::move(got.unwrap_err()));
-        }
+        if(!got.ok()) return Err::err(spp::move(got.unwrap_err()));
         u64 n = got.unwrap();
-        if(n == 0) {
-            return Result<Fetched_Response<A>, String_View>::err("http_eof_in_body"_v);
-        }
+        if(n == 0) return Err::err("http_eof_in_body"_v);
         for(u64 i = 0; i < n; i++) buf.push(chunk[i]);
         already_have_body += n;
     }
@@ -299,11 +317,9 @@ fetch(S& stream, const Request<A>& request) noexcept {
     Fetched_Response<A> out;
     out.raw = spp::move(buf);
     auto resp = parse_response<A>(out.raw.slice());
-    if(!resp.ok()) {
-        return Result<Fetched_Response<A>, String_View>::err(spp::move(resp.unwrap_err()));
-    }
+    if(!resp.ok()) return Err::err(spp::move(resp.unwrap_err()));
     out.response = spp::move(resp.unwrap());
-    return Result<Fetched_Response<A>, String_View>::ok(spp::move(out));
+    return Err::ok(spp::move(out));
 }
 
 } // namespace spp::Protocol::Http
